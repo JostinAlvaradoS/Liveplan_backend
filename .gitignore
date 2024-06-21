@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches directories
+.caches/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDEs and editors
+.idea/
+.vscode/
+
+# Django local settings
+*.log
+*.pot
+*.pyc
+*.sqlite3
+
+# Ignore local development settings
+local_settings.py
+
+# Ignore pipenv / virtualenv dependency management
+Pipfile
+Pipfile.lock
+
+# Ignore database configurations
+db.sqlite3
+
+# Ignore static files directory (if using collectstatic)
+/staticfiles/
+
+# Ignore media files (if using Django's default media settings)
+/media/
+
+# Ignore environment variables file
+.env
+
+# Ignore any other sensitive or environment-specific information
+*.secret
+
+# Ignore local test settings
+.pytest_cache/
+
+# Ignore Docker-related files (if using Docker)
+docker-compose.yml
