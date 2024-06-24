@@ -25,8 +25,10 @@ SECRET_KEY = 'django-insecure-h$lbw0usy3k$o49bn1t5xvm%l@_!rsz=lgr+41^1^sc7mx0y$y
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
 
+CORS_ALLOWED_ORIGINS = [
+       "http://localhost:4200",  # Reemplaza con tu frontend Angular URL
+]
 
 # Application definition
 
@@ -39,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'livePlan',
     'rest_framework',
+    'corsheaders'
 ]
 
 MIDDLEWARE = [
@@ -49,6 +52,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+     'corsheaders.middleware.CorsMiddleware',  # Agregar esto antes de CommonMiddleware
+    'django.middleware.common.CommonMiddleware',
 ]
 
 ROOT_URLCONF = 'liveplanBackend.urls'
