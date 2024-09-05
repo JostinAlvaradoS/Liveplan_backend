@@ -3,7 +3,9 @@ from django.db import models
 class planNegocio(models.Model):
     id = models.AutoField(primary_key=True)
     autor = models.CharField(max_length=90)
-    problematica = models.TextField()
+    problematica = models.CharField(max_length=300)
+    descripcion = models.TextField()
+    
 
 class inversionInicial(models.Model):
     id = models.AutoField(primary_key=True)
@@ -16,3 +18,74 @@ class detalleInversionInicial(models.Model):
     seccion = models.ForeignKey(inversionInicial, on_delete=models.CASCADE)
     elemento = models.CharField(max_length=100)
     importe = models.IntegerField(null=False)
+
+class Supuesto(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    porcentaje_ventas_inventario = models.IntegerField()
+    variacion_porcentaje_ventas_credito = models.IntegerField()
+    ptu_se_paga_al_siguiente_ano = models.IntegerField()
+    isr_se_paga_al_siguiente_mes = models.IntegerField()
+
+
+class Producto_servicio(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    nombre = models.CharField(max_length=200, blank=False)
+
+class VentaDiaria(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    producto_servicio = models.ForeignKey(Producto_servicio,on_delete=models.CASCADE)
+    ventas_por_dia = models.IntegerField()
+
+class VariacionAnual(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    anio = models.IntegerField()
+    porcentaje = models.IntegerField()
+
+
+class PrecioVenta(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    producto_servicio = models.ForeignKey(Producto_servicio,on_delete=models.CASCADE)
+    precio = models.DecimalField(max_digits=10, decimal_places=2)
+
+
+class Categorias_costos(models.Model):
+    id = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=100)
+
+
+class Costo(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    categoria = models.ForeignKey(Categorias_costos, on_delete=models.CASCADE)
+    producto_servicio = models.ForeignKey(Producto_servicio,on_delete=models.CASCADE)
+    costo = models.DecimalField(max_digits=10, decimal_places=3)
+
+class IndicadoresMacro(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    tipoCambio = models.DecimalField(max_digits=10,decimal_places=3)
+    inflacionAnual = models.DecimalField(max_digits=10,decimal_places=3)
+    tasaInteresDeuda = models.DecimalField(max_digits=10,decimal_places=3)
+    tasaInteresInversiones = models.DecimalField(max_digits=10,decimal_places=3)
+    tasaImpuesto = models.IntegerField()
+    ptu = models.IntegerField()
+    diasporMes = models.IntegerField()
+
+
+class FinanciamientoInversiones(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    capitalSocial = models.IntegerField()
+    deuda = models.IntegerField()
+
+class proyeccionVentas(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    producto_servicio = models.ForeignKey(Producto_servicio, on_delete=models.CASCADE)
+    anio = models.IntegerField()
+    ventas_mensuales = models.JSONField()  
