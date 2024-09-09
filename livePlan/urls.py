@@ -1,6 +1,6 @@
 # urls.py
 from django.urls import path
-from .views import calcular_ventas, create_costos, create_indicadores_macro, create_plan_negocio, create_inversion_inicial, create_detalle_inversion_inicial, create_precios, create_producto_servicio, create_supuesto, create_variacion_anual, create_venta_diaria, generar_tabla_precios, gestionar_depreciacion_mensual, \
+from .views import calcular_ventas, create_costos, create_indicadores_macro, create_plan_negocio, create_inversion_inicial, create_detalle_inversion_inicial, create_precios, create_producto_servicio, create_supuesto, create_variacion_anual, create_venta_diaria, generar_reporte_costos, generar_tabla_precios, gestionar_depreciacion_mensual, \
     get_plan_negocio_by_autor, get_inversion_inicial_by_plan_negocio, obtener_proyeccion_demanda, update_vida_util
 
 urlpatterns = [
@@ -21,4 +21,5 @@ urlpatterns = [
     path('update_vida_util/', update_vida_util),
     path('gestionar_depreciacion_mensual/', gestionar_depreciacion_mensual),
     path('generar_tabla_precios/', generar_tabla_precios),
+     path('generar_reporte_costos/', generar_reporte_costos),
 ]

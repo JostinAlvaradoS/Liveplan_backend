@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from livePlan.auxiliares import calcular_ventas_mensuales
-from .models import PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas
+from .models import Categorias_costos, Costo, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas
 from .serializers import CostoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
 
 @api_view(['POST'])
@@ -463,3 +463,81 @@ def generar_tabla_precios(request):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['POST'])
+def generar_reporte_costos(request):
+    try:
+        # Obtener el ID del plan de negocio desde la solicitud
+        plan_negocio_id = request.data.get('planNegocio')
+        if not plan_negocio_id:
+            return Response({"error": "El planNegocio es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verificar si el plan de negocio existe
+        try:
+            plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
+        except planNegocio.DoesNotExist:
+            return Response({"error": "El plan de negocio no fue encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Obtener todos los productos o servicios asociados al plan de negocio
+        productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
+
+        # Si no hay productos, retornar un error
+        if not productos.exists():
+            return Response({"error": "No se encontraron productos o servicios para este plan de negocio."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Estructura del reporte de costos
+        reporte_costos = {}
+
+        for producto in productos:
+            # Inicializar datos para el producto actual
+            datos_producto = {}
+
+            # Obtener todas las categorías de costos asociadas al producto
+            costos_producto = Costo.objects.filter(planNegocio=plan_negocio, producto_servicio=producto)
+
+            # Agrupar los costos por categoría
+            for categoria in Categorias_costos.objects.all():
+                costos_categoria = costos_producto.filter(categoria=categoria)
+                if not costos_categoria.exists():
+                    continue  # Saltar si no hay costos para esta categoría
+
+                # Inicializar los datos para la categoría actual
+                datos_categoria = {
+                    "costos_mensuales": {},
+                    "totales_anuales": {}
+                }
+
+                # Obtener el costo de la categoría para usar como referencia
+                costo_categoria = costos_categoria.first().costo
+
+                # Agregar la referencia con el costo de la categoría
+                datos_categoria["referencia"] = float(costo_categoria)
+
+                # Repetir el costo mensual durante 5 años y calcular los totales anuales como promedio
+                for anio in range(1, 6):
+                    suma_anual = 0
+                    datos_categoria["costos_mensuales"][f"Año {anio}"] = {}
+                    for mes in range(1, 13):
+                        referencia_mes = f"Año {anio} - Mes {mes}"
+                        # Usar el costo de la categoría para todos los meses del año
+                        costo_mensual = float(costo_categoria)
+
+                        # Asignar el costo mensual
+                        datos_categoria["costos_mensuales"][f"Año {anio}"][str(mes)] = costo_mensual
+                        suma_anual += costo_mensual
+
+                    # Calcular el total anual como el promedio mensual de los 12 meses
+                    total_anual = suma_anual / 12 if suma_anual > 0 else 0
+                    datos_categoria["totales_anuales"][f"Año {anio}"] = total_anual
+
+                # Agregar la categoría con sus costos al producto
+                datos_producto[categoria.nombre] = datos_categoria
+
+            # Agregar el producto con sus categorías al reporte final
+            reporte_costos[producto.nombre] = datos_producto
+
+        # Retornar el JSON estructurado
+        return Response({"resultado": reporte_costos}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
