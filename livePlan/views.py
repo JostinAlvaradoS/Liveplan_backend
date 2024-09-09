@@ -403,3 +403,63 @@ def gestionar_depreciacion_mensual(request):
             
             # Devolver los datos recién creados
             return Response({"mensaje": "Depreciaciones creadas exitosamente."}, status=status.HTTP_201_CREATED)
+        
+
+@api_view(['POST'])
+def generar_tabla_precios(request):
+    try:
+        # Obtener el ID del plan de negocio desde la solicitud
+        plan_negocio_id = request.data.get('planNegocio')
+        if not plan_negocio_id:
+            return Response({"error": "El planNegocio es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verificar si el plan de negocio existe
+        try:
+            plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
+        except planNegocio.DoesNotExist:
+            return Response({"error": "El plan de negocio no fue encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Obtener todos los productos o servicios asociados al plan de negocio
+        productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
+
+        # Si no hay productos, retornar un error
+        if not productos.exists():
+            return Response({"error": "No se encontraron productos o servicios para este plan de negocio."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Estructura de la tabla de precios
+        tabla_precios = {}
+
+        for producto in productos:
+            # Obtener el precio del producto
+            try:
+                precio = PrecioVenta.objects.get(planNegocio=plan_negocio, producto_servicio=producto).precio
+            except PrecioVenta.DoesNotExist:
+                continue  # Saltar si no hay precio para este producto
+
+            # Inicializar datos para el producto actual
+            datos_producto = {
+                "ventas_mensuales": {},
+                "totales_anuales": {}
+            }
+
+            # Repetir el precio mensual durante 5 años y calcular los totales anuales
+            for anio in range(1, 6):
+                total_anio = 0
+                datos_producto["ventas_mensuales"][f"Año {anio}"] = {}
+                for mes in range(1, 13):
+                    # Asignar el precio mensual
+                    datos_producto["ventas_mensuales"][f"Año {anio}"][str(mes)] = precio
+                    total_anio += precio/12  # Acumular el total para el año
+
+                # Al final de cada año, asignar el total anual
+                datos_producto["totales_anuales"][f"Año {anio}"] = total_anio
+
+            # Agregar el producto con su tabla de precios al resultado final
+            tabla_precios[producto.nombre] = datos_producto
+
+        # Retornar el JSON estructurado de la forma solicitada
+        return Response({"resultado": tabla_precios}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
