@@ -18,6 +18,7 @@ class detalleInversionInicial(models.Model):
     seccion = models.ForeignKey(inversionInicial, on_delete=models.CASCADE)
     elemento = models.CharField(max_length=100)
     importe = models.IntegerField(null=False)
+    vida_util = models.IntegerField(null=True)
 
 class Supuesto(models.Model):
     id = models.AutoField(primary_key=True)
@@ -89,3 +90,15 @@ class proyeccionVentas(models.Model):
     producto_servicio = models.ForeignKey(Producto_servicio, on_delete=models.CASCADE)
     anio = models.IntegerField()
     ventas_mensuales = models.JSONField()  
+
+class depreciacionMensual(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    inversion = models.ForeignKey(detalleInversionInicial, on_delete=models.CASCADE)
+    depreciacionMensual = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+    depreciacion_anio1 = models.IntegerField( null=True)
+    depreciacion_anio2 = models.IntegerField( null=True)
+    depreciacion_anio3 = models.IntegerField( null=True)
+    depreciacion_anio4 = models.IntegerField( null=True)
+    depreciacion_anio5 = models.IntegerField( null=True)
+    valor_rescate = models.IntegerField(null=True) 

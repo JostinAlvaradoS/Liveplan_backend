@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from livePlan.auxiliares import calcular_ventas_mensuales
-from .models import PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas
+from .models import PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas
 from .serializers import CostoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
 
 @api_view(['POST'])
@@ -257,3 +257,149 @@ def calcular_ventas(request):
         return Response({"error": "Plan de negocio no encontrado."}, status=404)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+    
+
+@api_view(['POST'])
+def update_vida_util(request):
+    try:
+        id = request.data.get('id')
+        if not id:
+            return Response({"error": "El ID es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Obtener el detalle de inversión inicial
+        detalle = detalleInversionInicial.objects.get(id=id)
+        
+        # Obtener el nuevo valor de vida útil
+        vida_util = int(request.data.get('vida_util', None))
+
+        if vida_util is not None:
+            # Actualizar vida útil en detalle de inversión
+            detalle.vida_util = vida_util
+            detalle.save()
+            
+            # Obtener el importe del detalle de inversión
+            importe = detalle.importe
+            
+            # Calcular la depreciación mensual y anual
+            if vida_util > 0:
+                depreciacion_mensual = importe / vida_util
+                depreciacion_anual = depreciacion_mensual * 12
+                depreciacion_anio1 = depreciacion_anual
+                depreciacion_anio2 = depreciacion_anual
+                depreciacion_anio3 = depreciacion_anual
+                depreciacion_anio4 = depreciacion_anual
+                depreciacion_anio5 = depreciacion_anual
+                
+                # Calcular el valor de rescate
+                total_depreciacion = depreciacion_anio1 + depreciacion_anio2 + depreciacion_anio3 + depreciacion_anio4 + depreciacion_anio5
+                valor_rescate = importe - total_depreciacion
+                
+                # Actualizar la depreciación mensual para el detalle de inversión
+                depreciaciones = depreciacionMensual.objects.filter(inversion=detalle)
+                
+                for depreciacion in depreciaciones:
+                    depreciacion.depreciacionMensual = depreciacion_mensual
+                    depreciacion.depreciacion_anio1 = depreciacion_anio1
+                    depreciacion.depreciacion_anio2 = depreciacion_anio2
+                    depreciacion.depreciacion_anio3 = depreciacion_anio3
+                    depreciacion.depreciacion_anio4 = depreciacion_anio4
+                    depreciacion.depreciacion_anio5 = depreciacion_anio5
+                    depreciacion.valor_rescate = valor_rescate
+                    depreciacion.save()
+            
+            # Serializar el detalle de inversión actualizado
+            serializer = DetalleInversionInicialSerializer(detalle)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        return Response({"error": "El campo vida_util es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    except detalleInversionInicial.DoesNotExist:
+        return Response({"error": "El detalle de la inversión inicial no fue encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+@api_view(['POST'])
+def gestionar_depreciacion_mensual(request):
+ if request.method == 'POST':
+        # Obtener el ID del plan de negocio del cuerpo de la solicitud POST
+        plan_negocio_id = request.data.get('planNegocio')
+        
+        # Verificar si se proporcionó el ID
+        if not plan_negocio_id:
+            return Response({"error": "El ID del plan de negocio es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Obtener el plan de negocio
+            plan = planNegocio.objects.get(id=plan_negocio_id)
+        except planNegocio.DoesNotExist:
+            return Response({"error": "Plan de negocio no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Obtener todas las secciones para el plan de negocio
+        secciones = inversionInicial.objects.filter(planNegocio=plan)
+        
+        if not secciones.exists():
+            return Response({"error": "No se encontraron secciones para este plan de negocio."}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Buscar depreciaciones existentes
+        depreciaciones_existentes = depreciacionMensual.objects.filter(planNegocio=plan)
+        
+        if depreciaciones_existentes.exists():
+            # Crear un diccionario para los resultados
+            resultados = {}
+            
+            for seccion in secciones:
+                detalles = detalleInversionInicial.objects.filter(seccion=seccion)
+                detalles_datos = []
+                
+                for detalle in detalles:
+                    depreciaciones = depreciacionMensual.objects.filter(inversion=detalle)
+                    depreciaciones_datos = [
+                        {
+                            "id": dep.id,
+                            "depreciacionMensual": dep.depreciacionMensual,
+                            "depreciacion_anio1": dep.depreciacion_anio1,
+                            "depreciacion_anio2": dep.depreciacion_anio2,
+                            "depreciacion_anio3": dep.depreciacion_anio3,
+                            "depreciacion_anio4": dep.depreciacion_anio4,
+                            "depreciacion_anio5": dep.depreciacion_anio5,
+                            "valor_rescate": dep.valor_rescate
+                        }
+                        for dep in depreciaciones
+                    ]
+                    detalles_datos.append({
+                        "id": detalle.id,
+                        "nombre":detalle.elemento,
+                        "importe":detalle.importe,
+                        "vida_util": detalle.vida_util,
+                        "depreciaciones": depreciaciones_datos
+                    })
+                
+                resultados[f"{seccion.seccion}"] = {
+                    "importe_total": seccion.importe,
+                    "detalles": detalles_datos
+                }
+            
+            return Response(resultados, status=status.HTTP_200_OK)
+        else:
+            # Crear depreciaciones si no existen
+            for seccion in inversionInicial.objects.filter(planNegocio=plan):
+                detalles = detalleInversionInicial.objects.filter(seccion=seccion)
+                
+                for detalle in detalles:
+                    if not depreciacionMensual.objects.filter(planNegocio=plan, inversion=detalle).exists():
+                        depreciacionMensual.objects.create(
+                            planNegocio=plan,
+                            inversion=detalle,
+                            depreciacionMensual=None,
+                            depreciacion_anio1=None,
+                            depreciacion_anio2=None,
+                            depreciacion_anio3=None,
+                            depreciacion_anio4=None,
+                            depreciacion_anio5=None,
+                            valor_rescate=None
+                        )
+            
+            # Devolver los datos recién creados
+            return Response({"mensaje": "Depreciaciones creadas exitosamente."}, status=status.HTTP_201_CREATED)
