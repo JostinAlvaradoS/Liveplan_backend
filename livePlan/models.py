@@ -102,3 +102,8 @@ class depreciacionMensual(models.Model):
     depreciacion_anio4 = models.IntegerField( null=True)
     depreciacion_anio5 = models.IntegerField( null=True)
     valor_rescate = models.IntegerField(null=True) 
+
+class gastosOperacion(models.Model):
+    id = models.AutoField(primary_key=True)
+    nombre = models.TextField()
+    referencia = models.DecimalField(max_digits=10,decimal_places=3, null=True)
