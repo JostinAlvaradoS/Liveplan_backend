@@ -4,8 +4,8 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from livePlan.auxiliares import calcular_ventas_mensuales
-from .models import Categorias_costos, Costo, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas
-from .serializers import CostoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
+from .models import Categorias_costos, Costo, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas, ventasMes
+from .serializers import CostoSerializer, FinanciamientoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
 
 @api_view(['POST'])
 def create_plan_negocio(request):
@@ -187,6 +187,14 @@ def obtener_proyeccion_demanda(request):
     except Exception as e:
         return Response({"error": str(e)}, status=500)
     
+@api_view(['POST'])
+def create_financiamiento(request):
+    if request.method == 'POST':
+        serializer = FinanciamientoSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 def create_indicadores_macro(request):
@@ -246,6 +254,19 @@ def calcular_ventas(request):
                     "ventas_mensuales": ventas_mensuales_totales,
                     "totales_anuales": totales_anuales,
                 }
+
+                 # Guardar los totales anuales en la tabla ventasMes
+                ventas_mes, created = ventasMes.objects.update_or_create(
+                        planNegocio=plan,
+                        producto=producto,
+                        defaults={
+                            'anio1': totales_anuales.get('Año 1'),
+                            'anio2': totales_anuales.get('Año 2'),
+                            'anio3': totales_anuales.get('Año 3'),
+                            'anio4': totales_anuales.get('Año 4'),
+                            'anio5': totales_anuales.get('Año 5'),
+                        }
+                    )
             
             except Exception as e:
                 # Manejar cualquier excepción durante el procesamiento
@@ -538,6 +559,196 @@ def generar_reporte_costos(request):
 
         # Retornar el JSON estructurado
         return Response({"resultado": reporte_costos}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+from django.db.models import Sum
+
+@api_view(['POST'])
+def calcular_volumenxmes(request):
+    try:
+        # Obtener el ID del plan de negocio del cuerpo de la solicitud POST
+        plan_negocio_id = request.data.get('planNegocio')
+        
+        # Verificar si se proporcionó el ID
+        if not plan_negocio_id:
+            return Response({"error": "El ID del plan de negocio es requerido."}, status=400)
+
+        # Verificar que el plan de negocio existe
+        plan = planNegocio.objects.get(id=plan_negocio_id)
+        
+        productos = Producto_servicio.objects.filter(planNegocio=plan)
+        resultados = {"resultado": {}}
+        
+        # Para cada producto/servicio
+        for producto in productos:
+            try:
+                # Obtener los costos asociados a este producto/servicio
+                costos = Costo.objects.filter(planNegocio=plan, producto_servicio=producto).aggregate(total_costo=Sum('costo'))
+                total_costo_producto = costos['total_costo'] if costos['total_costo'] else 0
+
+                if total_costo_producto == 0:
+                    resultados["resultado"][producto.nombre] = {"error": "No se encontraron costos asociados a este producto."}
+                    continue
+
+                # Obtener las ventas anuales del producto desde ventasMes
+                ventas = ventasMes.objects.filter(planNegocio=plan, producto=producto).first()
+                
+                if not ventas:
+                    resultados["resultado"][producto.nombre] = {"error": "No se encontraron ventas para este producto."}
+                    continue
+
+                # Inicializar el resultado de las ganancias mensuales y anuales por año
+                ganancia_mensual = {f"Año {anio}": {str(mes): 0 for mes in range(1, 13)} for anio in range(1, 6)}
+                totales_anuales = {f"Año {anio}": 0 for anio in range(1, 6)}
+                
+                # Para cada año, obtener el total anual de ventas y distribuirlo entre los 12 meses
+                for anio in range(1, 6):
+                    total_anio = getattr(ventas, f'anio{anio}', 0)  # Obtener el valor del año respectivo
+                    if total_anio:
+                        total_anio_mensual = total_anio / 12  # Distribuir el total anual entre los 12 meses
+                        
+                        # Calcular la ganancia mensual y el total anual para cada mes
+                        for mes in range(1, 13):
+                            ganancia_mensual[f"Año {anio}"][str(mes)] = total_anio_mensual * total_costo_producto
+                            totales_anuales[f"Año {anio}"] += ganancia_mensual[f"Año {anio}"][str(mes)]
+
+                # Agregar los resultados al JSON de respuesta
+                resultados["resultado"][producto.nombre] = {
+                    "ganancia_mensual": ganancia_mensual,
+                    "totales_anuales": totales_anuales
+                }
+
+            except Exception as e:
+                # Manejar cualquier excepción durante el procesamiento
+                resultados["resultado"][producto.nombre] = {"error": str(e)}
+
+        return Response(resultados)
+
+    except planNegocio.DoesNotExist:
+        return Response({"error": "Plan de negocio no encontrado."}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+   
+
+
+@api_view(['POST'])
+def calcular_costoMateriaPrima(request):
+    try:
+        # Obtener el ID del plan de negocio del cuerpo de la solicitud POST
+        plan_negocio_id = request.data.get('planNegocio')
+        
+        # Verificar si se proporcionó el ID
+        if not plan_negocio_id:
+            return Response({"error": "El ID del plan de negocio es requerido."}, status=400)
+
+        # Verificar que el plan de negocio existe
+        plan = planNegocio.objects.get(id=plan_negocio_id)
+        
+        productos = Producto_servicio.objects.filter(planNegocio=plan)
+        resultados = {"resultado": {}}
+        
+        # Filtrar los costos con la categoría ID=2
+        tipo2_categoria_id = 2
+        
+        # Para cada producto/servicio
+        for producto in productos:
+            try:
+                # Obtener los costos de tipo2 asociados a este producto/servicio
+                costos_tipo2 = Costo.objects.filter(planNegocio=plan, producto_servicio=producto, categoria_id=tipo2_categoria_id).aggregate(total_costo_tipo2=Sum('costo'))
+                total_costo_tipo2_producto = costos_tipo2['total_costo_tipo2'] if costos_tipo2['total_costo_tipo2'] else 0
+
+                if total_costo_tipo2_producto == 0:
+                    resultados["resultado"][producto.nombre] = {"error": "No se encontraron costos de tipo2 asociados a este producto."}
+                    continue
+
+                # Obtener las ventas anuales del producto desde ventasMes
+                ventas = ventasMes.objects.filter(planNegocio=plan, producto=producto).first()
+                
+                if not ventas:
+                    resultados["resultado"][producto.nombre] = {"error": "No se encontraron ventas para este producto."}
+                    continue
+
+                # Inicializar el resultado de las ganancias mensuales y anuales por año
+                ganancia_mensual = {f"Año {anio}": {str(mes): 0 for mes in range(1, 13)} for anio in range(1, 6)}
+                totales_anuales = {f"Año {anio}": 0 for anio in range(1, 6)}
+                
+                # Para cada año, obtener el total anual de ventas y distribuirlo entre los 12 meses
+                for anio in range(1, 6):
+                    total_anio = getattr(ventas, f'anio{anio}', 0)  # Obtener el valor del año respectivo
+                    if total_anio:
+                        total_anio_mensual = total_anio / 12  # Distribuir el total anual entre los 12 meses
+                        
+                        # Calcular la ganancia mensual y el total anual para cada mes
+                        for mes in range(1, 13):
+                            ganancia_mensual[f"Año {anio}"][str(mes)] = total_anio_mensual * total_costo_tipo2_producto
+                            totales_anuales[f"Año {anio}"] += ganancia_mensual[f"Año {anio}"][str(mes)]
+
+                # Agregar los resultados al JSON de respuesta
+                resultados["resultado"][producto.nombre] = {
+                    "ganancia_mensual": ganancia_mensual,
+                    "totales_anuales": totales_anuales
+                }
+
+            except Exception as e:
+                # Manejar cualquier excepción durante el procesamiento
+                resultados["resultado"][producto.nombre] = {"error": str(e)}
+
+        return Response(resultados)
+
+    except planNegocio.DoesNotExist:
+        return Response({"error": "Plan de negocio no encontrado."}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+    
+
+
+@api_view(['POST'])
+def calcular_gastos_operacion(request):
+    try:
+        # Verificar que el planNegocio esté presente en la solicitud
+        plan_negocio = request.data.get('planNegocio')
+        if not plan_negocio:
+            return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Obtener todos los registros de gastosOperacion
+        gastos = gastosOperacion.objects.all()
+
+        if not gastos:
+            return Response({"error": "No se encontraron registros de gastos de operación."}, status=status.HTTP_404_NOT_FOUND)
+        
+        resultados = {"resultado": {}}
+        num_anios = 5  # Número de años
+
+        # Para cada gasto de operación
+        for gasto in gastos:
+            try:
+                referencia = gasto.referencia
+                
+                if referencia is None:
+                    resultados["resultado"][gasto.nombre] = {"error": "La referencia no está definida para este gasto."}
+                    continue
+
+                # Inicializar los valores mensuales por año
+                gastos_mensuales_totales = {f"Año {anio+1}": {str(mes): float(referencia) for mes in range(1, 13)} for anio in range(num_anios)}
+                
+                # Calcular el total anual para cada año
+                totales_anuales = {anio: sum(gastos_mensuales_totales[anio][str(mes)] for mes in range(1, 13)) for anio in gastos_mensuales_totales}
+
+                # Agregar los resultados para cada gasto de operación
+                resultados["resultado"][gasto.nombre] = {
+                    "gastos_mensuales": gastos_mensuales_totales,
+                    "totales_anuales": totales_anuales,
+                }
+
+            except Exception as e:
+                # Manejar cualquier excepción durante el procesamiento
+                resultados["resultado"][gasto.nombre] = {"error": str(e)}
+
+        return Response(resultados)
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

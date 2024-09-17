@@ -1,6 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, planNegocio, inversionInicial, detalleInversionInicial,Supuesto, VentaDiaria, VariacionAnual
+from .models import ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, planNegocio, inversionInicial, detalleInversionInicial,Supuesto, VentaDiaria, VariacionAnual
 
 class PlanNegocioSerializer(serializers.ModelSerializer):
     class Meta:
@@ -32,6 +32,12 @@ class VentaDiariaSerializer(serializers.ModelSerializer):
     class Meta:
         model = VentaDiaria
         fields = '__all__'
+
+class FinanciamientoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ComposicionFinanciamiento
+        fields = '__all__'
+
 
 class VariacionAnualSerializer(serializers.ModelSerializer):
     class Meta:
