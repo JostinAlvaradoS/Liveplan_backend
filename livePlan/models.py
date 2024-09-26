@@ -83,11 +83,6 @@ class ComposicionFinanciamiento(models.Model):
     capitalSocial = models.IntegerField()
     deuda = models.IntegerField()
 
-class FinanciamientoInversiones(models.Model):
-    id = models.AutoField(primary_key=True)
-    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
-    capitalSocial = models.IntegerField()
-    deuda = models.IntegerField()
 
 class proyeccionVentas(models.Model):
     id = models.AutoField(primary_key=True)
@@ -124,4 +119,12 @@ class gastosOperacion(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.TextField()
     referencia = models.DecimalField(max_digits=10,decimal_places=3, null=True)
-    
+
+
+class prestamo(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    periodoCapitalizacion = models.IntegerField(null=True)
+    tasaInteresMensual = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+    periodosAmortizacion = models.IntegerField(null=True)
+    cuotaFijaMensual = models.DecimalField(max_digits=10,decimal_places=3, null=True)

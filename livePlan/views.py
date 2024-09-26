@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from livePlan.auxiliares import calcular_ventas_mensuales
-from .models import Categorias_costos, Costo, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, proyeccionVentas, ventasMes
+from .models import Categorias_costos, ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, prestamo, proyeccionVentas, ventasMes
 from .serializers import CostoSerializer, FinanciamientoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
 
 @api_view(['POST'])
@@ -749,6 +749,140 @@ def calcular_gastos_operacion(request):
                 resultados["resultado"][gasto.nombre] = {"error": str(e)}
 
         return Response(resultados)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def generar_reporte_montoInteres(request):
+    try:
+        # Obtener el planNegocio del cuerpo de la solicitud
+        plan_negocio = request.data.get('planNegocio')
+        if not plan_negocio:
+            return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Sumar todos los importes de la tabla inversionInicial según el planNegocio
+        suma_importes = inversionInicial.objects.filter(planNegocio_id=plan_negocio).aggregate(total_importe=Sum('importe'))['total_importe']
+
+        if suma_importes is None:
+            return Response({"error": "No se encontraron importes para el plan de negocio proporcionado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Obtener el valor de deuda desde la tabla financiamientoInversiones según el planNegocio
+        financiamiento = ComposicionFinanciamiento.objects.filter(planNegocio_id=plan_negocio).first()
+        if not financiamiento or financiamiento.deuda is None:
+            return Response({"error": "No se encontró financiamiento o el campo 'deuda' no está definido para el plan de negocio proporcionado."}, status=status.HTTP_404_NOT_FOUND)
+
+        deuda = financiamiento.deuda
+
+        # Obtener la tasa de interés de deuda desde la tabla indicadoresMacro según el planNegocio
+        indicadores = IndicadoresMacro.objects.filter(planNegocio_id=plan_negocio).first()
+        if not indicadores or indicadores.tasaInteresDeuda is None:
+            return Response({"error": "No se encontraron indicadores o el campo 'tasaInteresDeuda' no está definido para el plan de negocio proporcionado."}, status=status.HTTP_404_NOT_FOUND)
+
+        tasa_interes_deuda = indicadores.tasaInteresDeuda
+
+        # Calcular el resultado solicitado: (suma_importes * deuda / 100)
+        resultado_prestamo = (suma_importes * deuda) / 100
+
+        # Preparar la respuesta
+        resultado = {
+            "tasa_interes_deuda": tasa_interes_deuda,
+            "resultado_prestamo": resultado_prestamo
+        }
+
+        return Response({"resultado": resultado}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+from decimal import Decimal
+
+@api_view(['POST'])
+def gestionar_prestamo(request):
+    try:
+        plan_negocio_id = request.data.get('planNegocio')
+        if not plan_negocio_id:
+            return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
+        except planNegocio.DoesNotExist:
+            return Response({"error": "El plan de negocio no existe."}, status=status.HTTP_404_NOT_FOUND)
+
+        prestamo_existente = prestamo.objects.filter(planNegocio=plan_negocio).first()
+
+        if not prestamo_existente:
+            prestamo_existente = prestamo(planNegocio=plan_negocio)
+
+        if 'periodoCapitalizacion' in request.data and request.data['periodoCapitalizacion'] is not None:
+            prestamo_existente.periodoCapitalizacion = request.data['periodoCapitalizacion']
+        
+        if 'tasaInteresMensual' in request.data and request.data['tasaInteresMensual'] is not None:
+            prestamo_existente.tasaInteresMensual = request.data['tasaInteresMensual']
+        
+        if 'periodosAmortizacion' in request.data and request.data['periodosAmortizacion'] is not None:
+            prestamo_existente.periodosAmortizacion = request.data['periodosAmortizacion']
+
+        prestamo_existente.save()
+
+        if (prestamo_existente.periodoCapitalizacion is not None and
+            prestamo_existente.tasaInteresMensual is not None and
+            prestamo_existente.periodosAmortizacion is not None):
+            
+            inversiones = inversionInicial.objects.filter(planNegocio=plan_negocio).aggregate(total_importes=Sum('importe'))['total_importes']
+            deuda_porcentaje = ComposicionFinanciamiento.objects.get(planNegocio=plan_negocio).deuda / 100
+            monto_total_deuda = Decimal(inversiones) * Decimal(deuda_porcentaje)
+
+            tasa_interes_mensual = Decimal(prestamo_existente.tasaInteresMensual) / Decimal(100)  # Convertir a decimal
+            periodos_amortizacion = prestamo_existente.periodosAmortizacion
+            
+            if tasa_interes_mensual > 0:
+                cuota_fija_mensual = -1 * (monto_total_deuda * tasa_interes_mensual) / (1 - (1 + tasa_interes_mensual) ** -periodos_amortizacion)
+            else:
+                cuota_fija_mensual = monto_total_deuda / periodos_amortizacion  # En caso de interés 0
+
+            prestamo_existente.cuotaFijaMensual = cuota_fija_mensual
+            prestamo_existente.save()
+
+            reporte_mensual = []
+            saldo_inicial = monto_total_deuda
+            for mes in range(1, 61):
+                intereses = saldo_inicial * tasa_interes_mensual
+                abono_capital = cuota_fija_mensual - intereses
+                saldo_final = saldo_inicial - abono_capital
+
+                reporte_mensual.append({
+                    "Mes": mes,
+                    "Saldo Inicial": saldo_inicial,
+                    "Intereses": intereses,
+                    "Abono Capital": abono_capital,
+                    "Saldo Final": saldo_final
+                })
+
+                saldo_inicial = saldo_final
+
+            reporte_anual = {}
+            for anio in range(1, 6):
+                reporte_anual[f"Año {anio}"] = [reporte_mensual[mes - 1] for mes in range((anio - 1) * 12 + 1, anio * 12 + 1)]
+
+            return Response({
+                "reporte_anual": reporte_anual,
+                "tasaInteresMensual": prestamo_existente.tasaInteresMensual,
+                "cuotaFijaMensual": cuota_fija_mensual,
+                "periodoCapitalizacion": prestamo_existente.periodoCapitalizacion,
+                "periodosAmortizacion": prestamo_existente.periodosAmortizacion
+            }, status=status.HTTP_200_OK)
+        
+        else:
+            return Response({
+                "periodoCapitalizacion": prestamo_existente.periodoCapitalizacion,
+                "tasaInteresMensual": prestamo_existente.tasaInteresMensual,
+                "periodosAmortizacion": prestamo_existente.periodosAmortizacion,
+                "cuotaFijaMensual": prestamo_existente.cuotaFijaMensual,
+                "message": "Datos faltantes para realizar el cálculo de préstamo. Algunos valores son null."
+            }, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
