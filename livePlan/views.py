@@ -799,6 +799,7 @@ def generar_reporte_montoInteres(request):
 
 from decimal import Decimal
 
+
 @api_view(['POST'])
 def gestionar_prestamo(request):
     try:
@@ -806,16 +807,19 @@ def gestionar_prestamo(request):
         if not plan_negocio_id:
             return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Verificar existencia del plan de negocio
         try:
             plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
         except planNegocio.DoesNotExist:
             return Response({"error": "El plan de negocio no existe."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Verificar si ya existe un préstamo para el plan de negocio
         prestamo_existente = prestamo.objects.filter(planNegocio=plan_negocio).first()
 
         if not prestamo_existente:
             prestamo_existente = prestamo(planNegocio=plan_negocio)
 
+        # Actualizar campos del préstamo si están presentes en la solicitud
         if 'periodoCapitalizacion' in request.data and request.data['periodoCapitalizacion'] is not None:
             prestamo_existente.periodoCapitalizacion = request.data['periodoCapitalizacion']
         
@@ -827,25 +831,31 @@ def gestionar_prestamo(request):
 
         prestamo_existente.save()
 
+        # Verificar que todos los datos necesarios están presentes para el cálculo
         if (prestamo_existente.periodoCapitalizacion is not None and
             prestamo_existente.tasaInteresMensual is not None and
             prestamo_existente.periodosAmortizacion is not None):
             
+            # Obtener el monto total de inversión y deuda
             inversiones = inversionInicial.objects.filter(planNegocio=plan_negocio).aggregate(total_importes=Sum('importe'))['total_importes']
-            deuda_porcentaje = ComposicionFinanciamiento.objects.get(planNegocio=plan_negocio).deuda / 100
-            monto_total_deuda = Decimal(inversiones) * Decimal(deuda_porcentaje)
+            deuda_porcentaje = ComposicionFinanciamiento.objects.get(planNegocio=plan_negocio).deuda / Decimal(100)
+            tasa_anual = IndicadoresMacro.objects.filter(planNegocio_id=plan_negocio).first()
+            tasa_anual = tasa_anual.tasaInteresDeuda/100
+            monto_total_deuda = Decimal(inversiones) * deuda_porcentaje
 
-            tasa_interes_mensual = Decimal(prestamo_existente.tasaInteresMensual) / Decimal(100)  # Convertir a decimal
-            periodos_amortizacion = prestamo_existente.periodosAmortizacion
+            tasa_interes_mensual = Decimal(prestamo_existente.tasaInteresMensual) / Decimal(100)
+            periodos_amortizacion = Decimal(prestamo_existente.periodosAmortizacion)
             
+            # Cálculo de cuota fija mensual (corrección de tipos float y Decimal)
             if tasa_interes_mensual > 0:
-                cuota_fija_mensual = -1 * (monto_total_deuda * tasa_interes_mensual) / (1 - (1 + tasa_interes_mensual) ** -periodos_amortizacion)
+                cuota_fija_mensual = monto_total_deuda * (tasa_anual / prestamo_existente.periodoCapitalizacion) / (1 - (1 + (tasa_anual / prestamo_existente.periodoCapitalizacion)) ** -periodos_amortizacion)
             else:
-                cuota_fija_mensual = monto_total_deuda / periodos_amortizacion  # En caso de interés 0
+                cuota_fija_mensual = monto_total_deuda / periodos_amortizacion
 
             prestamo_existente.cuotaFijaMensual = cuota_fija_mensual
             prestamo_existente.save()
 
+            # Generar reporte mensual
             reporte_mensual = []
             saldo_inicial = monto_total_deuda
             for mes in range(1, 61):
@@ -863,6 +873,7 @@ def gestionar_prestamo(request):
 
                 saldo_inicial = saldo_final
 
+            # Agrupar reporte mensual por año
             reporte_anual = {}
             for anio in range(1, 6):
                 reporte_anual[f"Año {anio}"] = [reporte_mensual[mes - 1] for mes in range((anio - 1) * 12 + 1, anio * 12 + 1)]
