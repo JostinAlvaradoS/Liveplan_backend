@@ -32,7 +32,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 ALLOWED_HOSTS = [
-       "localhost:4200",
+       "localhost",
        "liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
 ]
 
