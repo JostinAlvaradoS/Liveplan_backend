@@ -31,6 +31,12 @@ CORS_ALLOWED_ORIGINS = [
        "https://liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
 ]
 
+ALLOWED_HOSTS = [
+       "http://localhost:4200",
+       "https://liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
+]
+
+
 # Application definition
 
 INSTALLED_APPS = [
