@@ -26,11 +26,12 @@ SECRET_KEY = 'django-insecure-h$lbw0usy3k$o49bn1t5xvm%l@_!rsz=lgr+41^1^sc7mx0y$y
 DEBUG = True
 
 
-CORS_ALLOWED_ORIGINS = [
-       "http://localhost:4200",
-       "https://liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
-]
+# CORS_ALLOWED_ORIGINS = [
+#        "http://localhost:4200",
+#        "https://liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
+# ]
 
+CORS_ALLOW_ALL_ORIGINS = True
 ALLOWED_HOSTS = [
        "localhost",
        "liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
