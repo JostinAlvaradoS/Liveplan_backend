@@ -84,10 +84,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'liveplan',
-        'USER': 'root',
-        'PASSWORD':'1411',
-        'HOST':'localhost',
-        'PORT':'3306',
+        'USER': 'chostim',
+        'PASSWORD':'d96MmiaGeUPw0OLS1OUjPg1fw7TVanaK',
+        'HOST':'dpg-csarsr8gph6c73a5h0p0-a',
+        'PORT':'5432',
     }
 }
 
