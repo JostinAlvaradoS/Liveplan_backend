@@ -27,7 +27,8 @@ DEBUG = True
 
 
 CORS_ALLOWED_ORIGINS = [
-       "http://localhost:4200",  # Reemplaza con tu frontend Angular URL
+       "http://localhost:4200",
+       "https://liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
 ]
 
 # Application definition
