@@ -27,14 +27,15 @@ DEBUG = True
 
 
 CORS_ALLOWED_ORIGINS = [
-       "http://localhost:4200",
-       "https://liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
+       'http://localhost:4200',
+       'https://liveplan-backend.onrender.com' # Reemplaza con tu frontend Angular URL
 ]
 
 
 ALLOWED_HOSTS = [
-       "localhost",
-       "liveplan-backend.onrender.com"  # Reemplaza con tu frontend Angular URL
+       'localhost:4200',
+       'localhost',
+       'liveplan-backend.onrender.com'  # Reemplaza con tu frontend Angular URL
 ]
 
 
@@ -92,10 +93,10 @@ WSGI_APPLICATION = 'liveplanBackend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',  # Asegúrate de que el backend sea PostgreSQL
-        'NAME': 'liveplan',                           # Nombre de la base de datos
-        'USER': 'chostim',                            # Usuario de la base de datos
-        'PASSWORD': 'd96MmiaGeUPw0OLS1OUjPg1fw7TVanaK',  # Contraseña del usuario
-        'HOST': 'dpg-csarsr8gph6c73a5h0p0-a.oregon-postgres.render.com',  # Host externo
+        'NAME': 'liveplan_31d9',                           # Nombre de la base de datos
+        'USER': 'liveplan_31d9_user',                            # Usuario de la base de datos
+        'PASSWORD': 'mOjmMPvvKJs3Evb2JNx8gxptCoUXz8WN',  # Contraseña del usuario
+        'HOST': 'dpg-csatci3tq21c73945a70-a.oregon-postgres.render.com',  # Host externo
         'PORT': '5432',                               # Puerto por defecto para PostgreSQL
     }
 }
