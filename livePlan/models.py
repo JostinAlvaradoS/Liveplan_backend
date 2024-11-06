@@ -115,6 +115,18 @@ class ventasMes(models.Model):
     anio4 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
     anio5 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
 
+
+class costosVenta(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    producto = models.ForeignKey(Producto_servicio, on_delete=models.CASCADE)
+    anio1 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+    anio2 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+    anio3 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+    anio4 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+    anio5 = models.DecimalField(max_digits=10,decimal_places=3, null=True)
+
+
 class gastosOperacion(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.TextField()

@@ -1,6 +1,6 @@
 # urls.py
 from django.urls import path
-from .views import calcular_costoMateriaPrima, calcular_gastos_operacion, calcular_utilidad_bruta_total, calcular_ventas, calcular_volumenxmes, create_costos, create_financiamiento, create_indicadores_macro, create_plan_negocio, create_inversion_inicial, create_detalle_inversion_inicial, create_precios, create_producto_servicio, create_supuesto, create_variacion_anual, create_venta_diaria, generar_reporte_costos, generar_reporte_montoInteres,generar_tabla_precios, gestionar_depreciacion_mensual, gestionar_prestamo, \
+from .views import  calcular_costoMateriaPrima, calcular_gastos_operacion, calcular_ventas, calcular_volumenxmes, create_costos, create_financiamiento, create_indicadores_macro, create_plan_negocio, create_inversion_inicial, create_detalle_inversion_inicial, create_precios, create_producto_servicio, create_supuesto, create_variacion_anual, create_venta_diaria, generar_reporte_costos, generar_reporte_montoInteres,generar_tabla_precios, generar_utilidad_bruta, gestionar_depreciacion_mensual, gestionar_prestamo, \
     get_plan_negocio_by_autor, get_inversion_inicial_by_plan_negocio, obtener_proyeccion_demanda, update_vida_util
 
 urlpatterns = [
@@ -28,5 +28,5 @@ urlpatterns = [
     path('calcular_gastos_operacion/',  calcular_gastos_operacion),
     path('generar_deuda/',  generar_reporte_montoInteres),
     path('gestionar_prestamo/',  gestionar_prestamo),
-    path('generar_utilidadbruta/',  calcular_utilidad_bruta_total),
+    path('generar_utilidadbruta/',  generar_utilidad_bruta),
 ]

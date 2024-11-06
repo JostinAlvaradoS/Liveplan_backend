@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from livePlan.auxiliares import calcular_ventas_mensuales
-from .models import Categorias_costos, ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, prestamo, proyeccionVentas, ventasMes
+from .models import Categorias_costos, ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, costosVenta, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, prestamo, proyeccionVentas, ventasMes
 from .serializers import CostoSerializer, FinanciamientoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
 
 @api_view(['POST'])
@@ -564,7 +564,6 @@ def generar_reporte_costos(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
 from django.db.models import Sum
 
 @api_view(['POST'])
@@ -616,6 +615,30 @@ def calcular_volumenxmes(request):
                             ganancia_mensual[f"Año {anio}"][str(mes)] = total_anio_mensual * total_costo_producto
                             totales_anuales[f"Año {anio}"] += ganancia_mensual[f"Año {anio}"][str(mes)]
 
+                # Verificar si ya existe un registro en costosVenta para este planNegocio y producto
+                costos_venta_existente = costosVenta.objects.filter(planNegocio=plan, producto=producto).first()
+                
+                if not costos_venta_existente:
+                    # Crear un nuevo registro si no existe
+                    costos_venta = costosVenta.objects.create(
+                        planNegocio=plan,
+                        producto=producto,
+                        anio1=totales_anuales["Año 1"],
+                        anio2=totales_anuales["Año 2"],
+                        anio3=totales_anuales["Año 3"],
+                        anio4=totales_anuales["Año 4"],
+                        anio5=totales_anuales["Año 5"]
+                    )
+                    costos_venta.save()
+                else:
+                    # Si ya existe, actualizar los valores de los totales anuales
+                    costos_venta_existente.anio1 = totales_anuales["Año 1"]
+                    costos_venta_existente.anio2 = totales_anuales["Año 2"]
+                    costos_venta_existente.anio3 = totales_anuales["Año 3"]
+                    costos_venta_existente.anio4 = totales_anuales["Año 4"]
+                    costos_venta_existente.anio5 = totales_anuales["Año 5"]
+                    costos_venta_existente.save()
+
                 # Agregar los resultados al JSON de respuesta
                 resultados["resultado"][producto.nombre] = {
                     "ganancia_mensual": ganancia_mensual,
@@ -632,6 +655,7 @@ def calcular_volumenxmes(request):
         return Response({"error": "Plan de negocio no encontrado."}, status=404)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
    
 
 
@@ -899,10 +923,12 @@ def gestionar_prestamo(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
+
+
 
 @api_view(['POST'])
-def calcular_utilidad_bruta_total(request):
+def generar_utilidad_bruta(request):
     try:
         # Obtener el ID del plan de negocio desde el POST
         plan_negocio_id = request.data.get('planNegocio')
@@ -910,10 +936,7 @@ def calcular_utilidad_bruta_total(request):
             return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validar la existencia del plan de negocio
-        try:
-            plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
-        except planNegocio.DoesNotExist:
-            return Response({"error": "El plan de negocio no existe."}, status=status.HTTP_404_NOT_FOUND)
+        plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
 
         # Inicializar el diccionario para almacenar el detalle anual
         ventas_mensuales_detalladas = {}
@@ -921,51 +944,70 @@ def calcular_utilidad_bruta_total(request):
         # Obtener todos los productos asociados a este plan de negocio
         productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
 
+        # Cargar en memoria los precios de venta, proyecciones y costos de ventas
+        precios_venta = {p.producto_servicio.id: Decimal(p.precio) for p in PrecioVenta.objects.filter(planNegocio=plan_negocio)}
+        proyecciones_ventas = {
+            (v.producto.id, f'anio{anio}'): Decimal(getattr(v, f'anio{anio}', 0))
+            for v in ventasMes.objects.filter(planNegocio=plan_negocio)
+            for anio in range(1, 6)
+        }
+        costos_ventas = {
+            (c.producto.id, f'anio{anio}'): Decimal(getattr(c, f'anio{anio}', 0)) / Decimal(12)
+            for c in costosVenta.objects.filter(planNegocio=plan_negocio)
+            for anio in range(1, 6)
+        }
+
         # Iterar por cada año (anio1 a anio5)
         for anio in range(1, 6):
             ventas_mensuales = {}
             total_ventas_anio = Decimal(0)
+            total_costos_anio = Decimal(0)
 
             # Iterar por cada mes (1 a 12)
             for mes in range(1, 13):
-                total_ventas_mes = Decimal(0)  # Inicializar las ventas mensuales
+                total_ventas_mes = Decimal(0)
+                total_costos_mes = Decimal(0)
 
-                # Iterar sobre los productos para calcular las ventas por mes
+                # Iterar sobre los productos para calcular las ventas y costos por mes
                 for producto in productos:
+                    producto_id = producto.id
 
                     # Obtener el precio de venta del producto
-                    precio_venta = PrecioVenta.objects.filter(planNegocio=plan_negocio, producto_servicio=producto).first()
-                    if not precio_venta:
+                    precio_venta = precios_venta.get(producto_id)
+                    if precio_venta is None:
                         continue  # Saltar si no hay precio de venta definido para el producto
 
-                    # Obtener las ventas mensuales del año actual
-                    proyeccion_ventas = ventasMes.objects.filter(planNegocio=plan_negocio, producto=producto).first()
-                    if not proyeccion_ventas:
-                        continue  # Saltar si no hay proyección de ventas para el producto
-
-                    # Obtener las ventas del año actual
-                    ventas_anio = getattr(proyeccion_ventas, f'anio{anio}', Decimal(0))  # Obtener ventas de anio1, anio2, etc.
-                    if ventas_anio == Decimal(0):
+                    # Obtener las ventas anuales del año actual
+                    ventas_anio = proyecciones_ventas.get((producto_id, f'anio{anio}'), Decimal(0))
+                    if ventas_anio == 0:
                         continue  # Saltar si no hay ventas para ese año
 
                     # Calcular las ventas mensuales ajustadas (ventas anuales / 12)
                     ventas_mes_ajustadas = ventas_anio / Decimal(12)
-
-                    # Asegurarse de que el precio se maneje como Decimal
-                    precio_venta_decimal = Decimal(str(precio_venta.precio))  # Convertir el precio a Decimal
-
-                    # Calcular las ventas mensuales del producto
-                    ventas_producto_mes = ventas_mes_ajustadas * precio_venta_decimal
+                    ventas_producto_mes = ventas_mes_ajustadas * precio_venta
                     total_ventas_mes += ventas_producto_mes
 
-                # Guardar las ventas mensuales bajo la clave 'VentasMes{mes}'
-                ventas_mensuales[f"VentasMes{mes}"] = round(total_ventas_mes, 2)  # Redondear a 2 decimales
+                    # Obtener el costo de ventas mensual del año actual
+                    costo_ventas_mes = costos_ventas.get((producto_id, f'anio{anio}'), Decimal(0))
+                    total_costos_mes += costo_ventas_mes
 
-                total_ventas_anio += total_ventas_mes  # Acumulando las ventas mensuales en el total anual
+                # Guardar las ventas mensuales, los costos mensuales y la utilidad bruta
+                ventas_mensuales[f"VentasMes{mes}"] = round(total_ventas_mes, 2)
+                ventas_mensuales[f"CostoVentasMes{mes}"] = round(total_costos_mes, 2)
+                ventas_mensuales[f"UtilidadBrutaMes{mes}"] = round(total_ventas_mes - total_costos_mes, 2)
+
+                # Acumular ventas y costos en el total anual
+                total_ventas_anio += total_ventas_mes
+                total_costos_anio += total_costos_mes
+
+            # Calcular la utilidad bruta anual
+            utilidad_bruta_anio = total_ventas_anio - total_costos_anio
 
             # Guardar el total anual para el año en cuestión
-            ventas_mensuales["TotalVentasAño"] = round(total_ventas_anio, 2)  # Renombrar a TotalVentasAño
-            ventas_mensuales_detalladas[f"Año{anio}"] = ventas_mensuales
+            ventas_mensuales["TotalVentasAnio"] = round(total_ventas_anio, 2)
+            ventas_mensuales["CostoVentasAnio"] = round(total_costos_anio, 2)
+            ventas_mensuales["UtilidadBrutaAnio"] = round(utilidad_bruta_anio, 2)
+            ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
 
         # Respuesta JSON con los detalles de ventas mensuales y anuales
         return Response({
