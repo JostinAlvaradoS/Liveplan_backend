@@ -927,6 +927,9 @@ def gestionar_prestamo(request):
 
 
 
+from decimal import Decimal
+from django.db.models import Sum
+
 @api_view(['POST'])
 def generar_utilidad_bruta(request):
     try:
@@ -943,6 +946,9 @@ def generar_utilidad_bruta(request):
 
         # Obtener todos los productos asociados a este plan de negocio
         productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
+
+        # Obtener el valor total de gastos de operación
+        total_gastos_operacion = gastosOperacion.objects.all().aggregate(total=Sum('referencia'))['total'] or Decimal(0)
 
         # Cargar en memoria los precios de venta, proyecciones y costos de ventas
         precios_venta = {p.producto_servicio.id: Decimal(p.precio) for p in PrecioVenta.objects.filter(planNegocio=plan_negocio)}
@@ -962,6 +968,7 @@ def generar_utilidad_bruta(request):
             ventas_mensuales = {}
             total_ventas_anio = Decimal(0)
             total_costos_anio = Decimal(0)
+            total_utilidad_bruta_anio = Decimal(0)
 
             # Iterar por cada mes (1 a 12)
             for mes in range(1, 13):
@@ -991,25 +998,27 @@ def generar_utilidad_bruta(request):
                     costo_ventas_mes = costos_ventas.get((producto_id, f'anio{anio}'), Decimal(0))
                     total_costos_mes += costo_ventas_mes
 
-                # Guardar las ventas mensuales, los costos mensuales y la utilidad bruta
+                # Calcular y almacenar ventas, costos, utilidad bruta y gastos operativos
                 ventas_mensuales[f"VentasMes{mes}"] = round(total_ventas_mes, 2)
                 ventas_mensuales[f"CostoVentasMes{mes}"] = round(total_costos_mes, 2)
                 ventas_mensuales[f"UtilidadBrutaMes{mes}"] = round(total_ventas_mes - total_costos_mes, 2)
+                ventas_mensuales[f"GastosOperacionMes{mes}"] = round(total_gastos_operacion, 2)  # Gastos operativos mensual
 
-                # Acumular ventas y costos en el total anual
+                # Acumular ventas, costos y utilidad bruta en el total anual
                 total_ventas_anio += total_ventas_mes
                 total_costos_anio += total_costos_mes
+                total_utilidad_bruta_anio += (total_ventas_mes - total_costos_mes)
 
-            # Calcular la utilidad bruta anual
+            # Calcular y almacenar totales anuales
             utilidad_bruta_anio = total_ventas_anio - total_costos_anio
-
-            # Guardar el total anual para el año en cuestión
             ventas_mensuales["TotalVentasAnio"] = round(total_ventas_anio, 2)
             ventas_mensuales["CostoVentasAnio"] = round(total_costos_anio, 2)
             ventas_mensuales["UtilidadBrutaAnio"] = round(utilidad_bruta_anio, 2)
+            ventas_mensuales["CostoGastosOperacionAnio"] = round(total_gastos_operacion * 12, 2)  # Gastos operativos anuales
+
             ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
 
-        # Respuesta JSON con los detalles de ventas mensuales y anuales
+        # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
         return Response({
             "plan_negocio": plan_negocio.descripcion,
             "ventas_mensuales_anuales": ventas_mensuales_detalladas
