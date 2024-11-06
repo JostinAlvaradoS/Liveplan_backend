@@ -771,14 +771,16 @@ def generar_reporte_montoInteres(request):
         # Obtener el valor de deuda desde la tabla financiamientoInversiones según el planNegocio
         financiamiento = ComposicionFinanciamiento.objects.filter(planNegocio_id=plan_negocio).first()
         if not financiamiento or financiamiento.deuda is None:
-            return Response({"error": "No se encontró financiamiento o el campo 'deuda' no está definido para el plan de negocio proporcionado."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "No se encontró financiamiento o el campo 'deuda' no está definido para el plan de negocio proporcionado."}, 
+                            status=status.HTTP_404_NOT_FOUND)
 
         deuda = financiamiento.deuda
 
         # Obtener la tasa de interés de deuda desde la tabla indicadoresMacro según el planNegocio
         indicadores = IndicadoresMacro.objects.filter(planNegocio_id=plan_negocio).first()
         if not indicadores or indicadores.tasaInteresDeuda is None:
-            return Response({"error": "No se encontraron indicadores o el campo 'tasaInteresDeuda' no está definido para el plan de negocio proporcionado."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "No se encontraron indicadores o el campo 'tasaInteresDeuda' no está definido para el plan de negocio proporcionado."}, 
+                            status=status.HTTP_404_NOT_FOUND)
 
         tasa_interes_deuda = indicadores.tasaInteresDeuda
 
@@ -894,6 +896,82 @@ def gestionar_prestamo(request):
                 "cuotaFijaMensual": prestamo_existente.cuotaFijaMensual,
                 "message": "Datos faltantes para realizar el cálculo de préstamo. Algunos valores son null."
             }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+@api_view(['POST'])
+def calcular_utilidad_bruta_total(request):
+    try:
+        # Obtener el ID del plan de negocio desde el POST
+        plan_negocio_id = request.data.get('planNegocio')
+        if not plan_negocio_id:
+            return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar la existencia del plan de negocio
+        try:
+            plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
+        except planNegocio.DoesNotExist:
+            return Response({"error": "El plan de negocio no existe."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Inicializar el diccionario para almacenar el detalle anual
+        ventas_mensuales_detalladas = {}
+
+        # Obtener todos los productos asociados a este plan de negocio
+        productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
+
+        # Iterar por cada año (anio1 a anio5)
+        for anio in range(1, 6):
+            ventas_mensuales = {}
+            total_ventas_anio = Decimal(0)
+
+            # Iterar por cada mes (1 a 12)
+            for mes in range(1, 13):
+                total_ventas_mes = Decimal(0)  # Inicializar las ventas mensuales
+
+                # Iterar sobre los productos para calcular las ventas por mes
+                for producto in productos:
+
+                    # Obtener el precio de venta del producto
+                    precio_venta = PrecioVenta.objects.filter(planNegocio=plan_negocio, producto_servicio=producto).first()
+                    if not precio_venta:
+                        continue  # Saltar si no hay precio de venta definido para el producto
+
+                    # Obtener las ventas mensuales del año actual
+                    proyeccion_ventas = ventasMes.objects.filter(planNegocio=plan_negocio, producto=producto).first()
+                    if not proyeccion_ventas:
+                        continue  # Saltar si no hay proyección de ventas para el producto
+
+                    # Obtener las ventas del año actual
+                    ventas_anio = getattr(proyeccion_ventas, f'anio{anio}', Decimal(0))  # Obtener ventas de anio1, anio2, etc.
+                    if ventas_anio == Decimal(0):
+                        continue  # Saltar si no hay ventas para ese año
+
+                    # Calcular las ventas mensuales ajustadas (ventas anuales / 12)
+                    ventas_mes_ajustadas = ventas_anio / Decimal(12)
+
+                    # Asegurarse de que el precio se maneje como Decimal
+                    precio_venta_decimal = Decimal(str(precio_venta.precio))  # Convertir el precio a Decimal
+
+                    # Calcular las ventas mensuales del producto
+                    ventas_producto_mes = ventas_mes_ajustadas * precio_venta_decimal
+                    total_ventas_mes += ventas_producto_mes
+
+                # Guardar las ventas mensuales bajo la clave 'VentasMes{mes}'
+                ventas_mensuales[f"VentasMes{mes}"] = round(total_ventas_mes, 2)  # Redondear a 2 decimales
+
+                total_ventas_anio += total_ventas_mes  # Acumulando las ventas mensuales en el total anual
+
+            # Guardar el total anual para el año en cuestión
+            ventas_mensuales["TotalVentasAño"] = round(total_ventas_anio, 2)  # Renombrar a TotalVentasAño
+            ventas_mensuales_detalladas[f"Año{anio}"] = ventas_mensuales
+
+        # Respuesta JSON con los detalles de ventas mensuales y anuales
+        return Response({
+            "plan_negocio": plan_negocio.descripcion,
+            "ventas_mensuales_anuales": ventas_mensuales_detalladas
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
