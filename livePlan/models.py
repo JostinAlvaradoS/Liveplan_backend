@@ -7,15 +7,22 @@ class planNegocio(models.Model):
     descripcion = models.TextField()
     
 
+class tipoInversionInicial(models.Model):
+    id = models.AutoField(primary_key=True)
+    tipo = models.CharField(max_length=100)
+
 class inversionInicial(models.Model):
     id = models.AutoField(primary_key=True)
     planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    tipo = models.ForeignKey(tipoInversionInicial, on_delete=models.CASCADE)
     seccion = models.CharField(max_length=100)
     importe = models.IntegerField(null=False)
 
 class detalleInversionInicial(models.Model):
     id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
     seccion = models.ForeignKey(inversionInicial, on_delete=models.CASCADE)
+    tipo = models.ForeignKey(tipoInversionInicial, on_delete=models.CASCADE)
     elemento = models.CharField(max_length=100)
     importe = models.IntegerField(null=False)
     vida_util = models.IntegerField(null=True)
@@ -27,7 +34,6 @@ class Supuesto(models.Model):
     variacion_porcentaje_ventas_credito = models.IntegerField()
     ptu_se_paga_al_siguiente_ano = models.IntegerField()
     isr_se_paga_al_siguiente_mes = models.IntegerField()
-
 
 class Producto_servicio(models.Model):
     id = models.AutoField(primary_key=True)

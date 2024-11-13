@@ -2,7 +2,8 @@ from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-
+from decimal import Decimal
+from django.db.models import Sum
 from livePlan.auxiliares import calcular_ventas_mensuales
 from .models import Categorias_costos, ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, costosVenta, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, prestamo, proyeccionVentas, ventasMes
 from .serializers import CostoSerializer, FinanciamientoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
@@ -20,7 +21,6 @@ def create_plan_negocio(request):
 
 @api_view(['POST'])
 def create_inversion_inicial(request):
-    print('Request Data:', request.data)
     if request.method == 'POST':
         serializer = InversionInicialSerializer(data=request.data)
         if serializer.is_valid():
@@ -925,11 +925,6 @@ def gestionar_prestamo(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
-
-from decimal import Decimal
-from django.db.models import Sum
-
 @api_view(['POST'])
 def generar_utilidad_bruta(request):
     try:
@@ -1026,3 +1021,4 @@ def generar_utilidad_bruta(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
