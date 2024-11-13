@@ -58,6 +58,7 @@ def get_inversion_inicial_by_plan_negocio(request):
         for inversion in inversiones:
             detalle = get_detalle_inversion_inicial(inversion.id)
             response_data.append({
+                'tipo': inversion.tipo,
                 'seccion': inversion.seccion,
                 'importe': inversion.importe,
                 'detalle': detalle
