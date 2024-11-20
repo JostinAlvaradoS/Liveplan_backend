@@ -1034,7 +1034,7 @@ def generar_utilidad_bruta(request):
                 ventas_mensuales[f"GastosOperacionMes{mes}"] = round(total_gastos_operacion, 2)  # Gastos operativos mensual
                 ventas_mensuales[f"DepreciacionesMes{mes}"] = round(total_depreciaciones_mes, 2)
                 ventas_mensuales[f"AmortizacionesMes{mes}"] = round(total_amortizaciones_mes, 2)
-                ventas_mensuales[f"gastosFinancierosMes{mes}"] = round(total_intereses_mes, 2)
+                ventas_mensuales[f"GastosFinancierosMes{mes}"] = round(total_intereses_mes, 2)
                 ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] = round(
                     total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes - total_intereses_mes, 2)
 
@@ -1055,14 +1055,14 @@ def generar_utilidad_bruta(request):
             ventas_mensuales["CostoGastosOperacionAnio"] = round(total_gastos_operacion * 12, 2)  # Gastos operativos anuales
             ventas_mensuales["DepreciacionesAnio"] = round(total_depreciaciones_anio, 2)
             ventas_mensuales["AmortizacionesAnio"] = round(total_amortizaciones_anio, 2)
-            ventas_mensuales["gastosFinancierosAnio"] = round(total_intereses_anio, 2)
+            ventas_mensuales["GastosFinancierosAnio"] = round(total_intereses_anio, 2)
             ventas_mensuales["UtilidadPrevioInteresImpuestosAnio"] = round(total_utilidad_previo_interes_impuestos_anio, 2)
 
             ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
 
         # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
         return Response({
-            "plan_negocio": plan_negocio.descripcion,
+            "plan_negocio": plan_negocio.id,
             "ventas_mensuales_anuales": ventas_mensuales_detalladas
         }, status=status.HTTP_200_OK)
 
