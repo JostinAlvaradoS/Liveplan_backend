@@ -977,6 +977,11 @@ def generar_utilidad_bruta(request):
         if "error" in intereses:
             return Response({"error": intereses["error"]}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Obtener el valor de PTU del préstamo
+        macro = IndicadoresMacro.objects.filter(planNegocio=plan_negocio).first()
+        ptu = macro.ptu if macro else Decimal(0)
+        tasa_impuesto = macro.tasaImpuesto if macro else Decimal(0)
+
         # Iterar por cada año (anio1 a anio5)
         for anio in range(1, 6):
             ventas_mensuales = {}
@@ -987,6 +992,11 @@ def generar_utilidad_bruta(request):
             total_amortizaciones_anio = Decimal(0)
             total_utilidad_previo_interes_impuestos_anio = Decimal(0)
             total_intereses_anio = Decimal(0)
+            total_utilidad_antes_ptu_anio = Decimal(0)
+            total_ptu_anio = Decimal(0)
+            total_utilidad_antes_impuestos_anio = Decimal(0)
+            total_isr_anio = Decimal(0)
+            total_utilidad_neta_anio = Decimal(0)
 
             # Iterar por cada mes (1 a 12)
             for mes in range(1, 13):
@@ -1034,9 +1044,17 @@ def generar_utilidad_bruta(request):
                 ventas_mensuales[f"GastosOperacionMes{mes}"] = round(total_gastos_operacion, 2)  # Gastos operativos mensual
                 ventas_mensuales[f"DepreciacionesMes{mes}"] = round(total_depreciaciones_mes, 2)
                 ventas_mensuales[f"AmortizacionesMes{mes}"] = round(total_amortizaciones_mes, 2)
-                ventas_mensuales[f"GastosFinancierosMes{mes}"] = round(total_intereses_mes, 2)
                 ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] = round(
                     total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes - total_intereses_mes, 2)
+                ventas_mensuales[f"GastosFinancierosMes{mes}"] = round(total_intereses_mes, 2)
+                ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] = round(
+                    ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] - ventas_mensuales[f"GastosFinancierosMes{mes}"], 2)
+                ventas_mensuales[f"PTUMes{mes}"] = round(ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] * ptu / 100, 2)
+                ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] = round(
+                    ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] - ventas_mensuales[f"PTUMes{mes}"], 2)
+                ventas_mensuales[f"ISRMes{mes}"] = round(ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] * tasa_impuesto / 100, 2)
+                ventas_mensuales[f"UtilidadNetaMes{mes}"] = round(
+                    ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] - ventas_mensuales[f"ISRMes{mes}"], 2)
 
                 # Acumular ventas, costos, utilidad bruta, depreciaciones, amortizaciones e intereses en el total anual
                 total_ventas_anio += total_ventas_mes
@@ -1046,6 +1064,11 @@ def generar_utilidad_bruta(request):
                 total_amortizaciones_anio += total_amortizaciones_mes
                 total_intereses_anio += total_intereses_mes
                 total_utilidad_previo_interes_impuestos_anio += (total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes - total_intereses_mes)
+                total_utilidad_antes_ptu_anio += ventas_mensuales[f"UtilidadAntesPTUMes{mes}"]
+                total_ptu_anio += ventas_mensuales[f"PTUMes{mes}"]
+                total_utilidad_antes_impuestos_anio += ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"]
+                total_isr_anio += ventas_mensuales[f"ISRMes{mes}"]
+                total_utilidad_neta_anio += ventas_mensuales[f"UtilidadNetaMes{mes}"]
 
             # Calcular y almacenar totales anuales
             utilidad_bruta_anio = total_ventas_anio - total_costos_anio
@@ -1055,9 +1078,13 @@ def generar_utilidad_bruta(request):
             ventas_mensuales["CostoGastosOperacionAnio"] = round(total_gastos_operacion * 12, 2)  # Gastos operativos anuales
             ventas_mensuales["DepreciacionesAnio"] = round(total_depreciaciones_anio, 2)
             ventas_mensuales["AmortizacionesAnio"] = round(total_amortizaciones_anio, 2)
-            ventas_mensuales["GastosFinancierosAnio"] = round(total_intereses_anio, 2)
             ventas_mensuales["UtilidadPrevioInteresImpuestosAnio"] = round(total_utilidad_previo_interes_impuestos_anio, 2)
-
+            ventas_mensuales["GastosFinancierosAnio"] = round(total_intereses_anio, 2)
+            ventas_mensuales["UtilidadAntesPTUAnio"] = round(total_utilidad_antes_ptu_anio, 2)
+            ventas_mensuales["PTUAnio"] = round(total_ptu_anio, 2)
+            ventas_mensuales["UtilidadAntesImpuestosAnio"] = round(total_utilidad_antes_impuestos_anio, 2)
+            ventas_mensuales["ISRAnio"] = round(total_isr_anio, 2)
+            ventas_mensuales["UtilidadNetaAnio"] = round(total_utilidad_neta_anio, 2)
             ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
 
         # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
