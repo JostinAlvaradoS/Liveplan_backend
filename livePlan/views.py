@@ -926,7 +926,6 @@ def gestionar_prestamo(request):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 @api_view(['POST'])
 def generar_utilidad_bruta(request):
     try:
@@ -940,6 +939,7 @@ def generar_utilidad_bruta(request):
 
         # Inicializar el diccionario para almacenar el detalle anual
         ventas_mensuales_detalladas = {}
+        flujo_efectivo_detallado = {}
 
         # Obtener todos los productos asociados a este plan de negocio
         productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
@@ -985,6 +985,7 @@ def generar_utilidad_bruta(request):
         # Iterar por cada año (anio1 a anio5)
         for anio in range(1, 6):
             ventas_mensuales = {}
+            flujo_efectivo_anio = {}
             total_ventas_anio = Decimal(0)
             total_costos_anio = Decimal(0)
             total_utilidad_bruta_anio = Decimal(0)
@@ -1056,6 +1057,11 @@ def generar_utilidad_bruta(request):
                 ventas_mensuales[f"UtilidadNetaMes{mes}"] = round(
                     ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] - ventas_mensuales[f"ISRMes{mes}"], 2)
 
+                # Calcular flujo de efectivo
+                flujo_efectivo_anio[f"VentasContadoMes{mes}"] = round(ventas_mensuales[f"VentasMes{mes}"] * Decimal(0.8), 2)
+                flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"] = round(ventas_mensuales[f"VentasMes{mes}"] * Decimal(0.2), 2)
+                flujo_efectivo_anio[f"IngresosMes{mes}"] = round(flujo_efectivo_anio[f"VentasContadoMes{mes}"] + flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"], 2)
+
                 # Acumular ventas, costos, utilidad bruta, depreciaciones, amortizaciones e intereses en el total anual
                 total_ventas_anio += total_ventas_mes
                 total_costos_anio += total_costos_mes
@@ -1086,12 +1092,15 @@ def generar_utilidad_bruta(request):
             ventas_mensuales["ISRAnio"] = round(total_isr_anio, 2)
             ventas_mensuales["UtilidadNetaAnio"] = round(total_utilidad_neta_anio, 2)
             ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
+            flujo_efectivo_detallado[f"Anio{anio}"] = flujo_efectivo_anio
 
         # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
         return Response({
             "plan_negocio": plan_negocio.id,
-            "ventas_mensuales_anuales": ventas_mensuales_detalladas
+            "ventas_mensuales_anuales": ventas_mensuales_detalladas,
+            "flujo_efectivo": flujo_efectivo_detallado
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    
