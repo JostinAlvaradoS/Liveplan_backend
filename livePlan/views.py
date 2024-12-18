@@ -1092,6 +1092,11 @@ def generar_utilidad_bruta(request):
             ventas_mensuales["ISRAnio"] = round(total_isr_anio, 2)
             ventas_mensuales["UtilidadNetaAnio"] = round(total_utilidad_neta_anio, 2)
             ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
+
+            # Calcular y almacenar totales anuales para flujo de efectivo
+            flujo_efectivo_anio["TotalVentasContadoAnio"] = round(sum(flujo_efectivo_anio[f"VentasContadoMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalCobroVentasCreditoAnio"] = round(sum(flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalIngresosAnio"] = round(sum(flujo_efectivo_anio[f"IngresosMes{mes}"] for mes in range(1, 13)), 2)
             flujo_efectivo_detallado[f"Anio{anio}"] = flujo_efectivo_anio
 
         # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
@@ -1103,4 +1108,3 @@ def generar_utilidad_bruta(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                    
