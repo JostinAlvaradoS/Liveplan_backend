@@ -95,10 +95,10 @@ WSGI_APPLICATION = 'liveplanBackend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'liveplan2_0',
-        'USER': 'liveplan2_0_user',
-        'PASSWORD': 'bLLJ3BkqJqgSbG2eoN8jZoVNmK66JnmT',
-        'HOST': 'dpg-ctjmkva3esus73e429kg-a.oregon-postgres.render.com',
+        'NAME': 'liveplan3_0',
+        'USER': 'liveplan3_0_user',
+        'PASSWORD': 'L0bcxwLjMRIrF4T0OTVeagpBzESDixaC',
+        'HOST': 'dpg-cu7q3t3tq21c73eq7b7g-a.oregon-postgres.render.com',
         'PORT': '5432',
     }
 }
