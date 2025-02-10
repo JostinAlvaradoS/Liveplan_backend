@@ -57,3 +57,6 @@ def calcular_intereses(plan_negocio):
 
     except Exception as e:
         return {"error": str(e)}
+
+
+

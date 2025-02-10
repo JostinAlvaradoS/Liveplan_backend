@@ -1168,3 +1168,265 @@ def generar_utilidad_bruta(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+def generar_utilidad_bruta(request):
+    try:
+        # Obtener el ID del plan de negocio desde el POST
+        plan_negocio_id = request.data.get('planNegocio')
+        if not plan_negocio_id:
+            return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar la existencia del plan de negocio
+        plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
+
+        # Inicializar el diccionario para almacenar el detalle anual
+        ventas_mensuales_detalladas = {}
+        flujo_efectivo_detallado = {}
+
+        # Obtener todos los productos asociados a este plan de negocio
+        productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
+
+        # Obtener el valor total de gastos de operación
+        total_gastos_operacion = gastosOperacion.objects.all().aggregate(total=Sum('referencia'))['total'] or Decimal(0)
+        efectivo_inicio = total_gastos_operacion * 2
+
+        # Cargar en memoria los precios de venta, proyecciones y costos de ventas
+        precios_venta = {p.producto_servicio.id: Decimal(p.precio) for p in PrecioVenta.objects.filter(planNegocio=plan_negocio)}
+        proyecciones_ventas = {
+            (v.producto.id, f'anio{anio}'): Decimal(getattr(v, f'anio{anio}', 0))
+            for v in ventasMes.objects.filter(planNegocio=plan_negocio)
+            for anio in range(1, 6)
+        }
+        costos_ventas = {
+            (c.producto.id, f'anio{anio}'): Decimal(getattr(c, f'anio{anio}', 0)) / Decimal(12)
+            for c in costosVenta.objects.filter(planNegocio=plan_negocio)
+            for anio in range(1, 6)
+        }
+
+        # Obtener las depreciaciones mensuales
+        depreciaciones_mensuales = {
+            d.inversion.id: Decimal(d.depreciacionMensual)
+            for d in depreciacionMensual.objects.filter(planNegocio=plan_negocio, inversion__tipo=1)
+        }
+
+        # Obtener las amortizaciones mensuales
+        amortizaciones_mensuales = {
+            a.inversion.id: Decimal(a.depreciacionMensual)
+            for a in depreciacionMensual.objects.filter(planNegocio=plan_negocio, inversion__tipo=2)
+        }
+
+        # Obtener los intereses mensuales y anuales
+        intereses = calcular_intereses(plan_negocio_id)
+        if "error" in intereses:
+            return Response({"error": intereses["error"]}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Obtener el valor de PTU del préstamo
+        macro = IndicadoresMacro.objects.filter(planNegocio=plan_negocio).first()
+        ptu = macro.ptu if macro else Decimal(0)
+        tasa_impuesto = macro.tasaImpuesto if macro else Decimal(0)
+
+        # Obtener el préstamo existente
+        prestamo_existente = prestamo.objects.filter(planNegocio=plan_negocio).first()
+        if not prestamo_existente:
+            return Response({"error": "No se encontró un préstamo para este plan de negocio."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Obtener los datos del préstamo
+        tasa_interes_mensual = Decimal(prestamo_existente.tasaInteresMensual) / Decimal(100)
+        cuota_fija_mensual = prestamo_existente.cuotaFijaMensual
+
+        # Recalcular los costos de materia prima
+        costos_materia_prima = {}
+        tipo2_categoria_id = 2
+        for producto in productos:
+            costos_tipo2 = Costo.objects.filter(planNegocio=plan_negocio, producto_servicio=producto, categoria_id=tipo2_categoria_id).aggregate(total_costo_tipo2=Sum('costo'))
+            total_costo_tipo2_producto = costos_tipo2['total_costo_tipo2'] if costos_tipo2['total_costo_tipo2'] else 0
+
+            if total_costo_tipo2_producto == 0:
+                continue
+
+            ventas = ventasMes.objects.filter(planNegocio=plan_negocio, producto=producto).first()
+            if not ventas:
+                continue
+
+            ganancia_mensual = {f"Año {anio}": {str(mes): 0 for mes in range(1, 13)} for anio in range(1, 6)}
+            for anio in range(1, 6):
+                total_anio = getattr(ventas, f'anio{anio}', 0)
+                if total_anio:
+                    total_anio_mensual = total_anio / 12
+                    for mes in range(1, 13):
+                        ganancia_mensual[f"Año {anio}"][str(mes)] = total_anio_mensual * total_costo_tipo2_producto
+
+            costos_materia_prima[producto.id] = ganancia_mensual
+        
+        # Iterar por cada año (anio1 a anio5)
+        for anio in range(1, 6):
+            ventas_mensuales = {}
+            flujo_efectivo_anio = {}
+            total_ventas_anio = Decimal(0)
+            total_costos_anio = Decimal(0)
+            total_utilidad_bruta_anio = Decimal(0)
+            total_depreciaciones_anio = Decimal(0)
+            total_amortizaciones_anio = Decimal(0)
+            total_utilidad_previo_interes_impuestos_anio = Decimal(0)
+            total_intereses_anio = Decimal(0)
+            total_utilidad_antes_ptu_anio = Decimal(0)
+            total_ptu_anio = Decimal(0)
+            total_utilidad_antes_impuestos_anio = Decimal(0)
+            total_isr_anio = Decimal(0)
+            total_utilidad_neta_anio = Decimal(0)
+            total_intereses_mensuales_anio = Decimal(0)
+            total_pago_prestamos_anio = Decimal(0)
+            total_egresos_anio = Decimal(0)
+        
+            # Inicializar efectivoInicio para el primer mes del año
+            if anio == 1:
+                efectivo_inicio_mes = efectivo_inicio
+            else:
+                efectivo_inicio_mes = efectivo_final_anio_anterior
+        
+            # Iterar por cada mes (1 a 12)
+            for mes in range(1, 13):
+                total_ventas_mes = Decimal(0)
+                total_costos_mes = Decimal(0)
+                total_depreciaciones_mes = Decimal(0)
+                total_amortizaciones_mes = Decimal(0)
+                total_intereses_mes = Decimal(intereses.get(f"interesesMes{(anio - 1) * 12 + mes}", 0))
+        
+                # Calcular el abono capital del préstamo
+                abono_capital = cuota_fija_mensual - total_intereses_mes
+        
+                # Iterar sobre los productos para calcular las ventas y costos por mes
+                for producto in productos:
+                    producto_id = producto.id
+        
+                    # Obtener el precio de venta del producto
+                    precio_venta = precios_venta.get(producto_id)
+                    if precio_venta is None:
+                        continue  # Saltar si no hay precio de venta definido para el producto
+        
+                    # Obtener las ventas anuales del año actual
+                    ventas_anio = proyecciones_ventas.get((producto_id, f'anio{anio}'), Decimal(0))
+                    if ventas_anio == 0:
+                        continue  # Saltar si no hay ventas para ese año
+        
+                    # Calcular las ventas mensuales ajustadas (ventas anuales / 12)
+                    ventas_mes_ajustadas = ventas_anio / Decimal(12)
+                    ventas_producto_mes = ventas_mes_ajustadas * precio_venta
+                    total_ventas_mes += ventas_producto_mes
+        
+                    # Obtener el costo de ventas mensual del año actual
+                    costo_ventas_mes = costos_ventas.get((producto_id, f'anio{anio}'), Decimal(0))
+                    total_costos_mes += costo_ventas_mes
+        
+                # Calcular las depreciaciones mensuales
+                for inversion_id, depreciacion in depreciaciones_mensuales.items():
+                    total_depreciaciones_mes += depreciacion
+        
+                # Calcular las amortizaciones mensuales
+                for inversion_id, amortizacion in amortizaciones_mensuales.items():
+                    total_amortizaciones_mes += amortizacion
+        
+                # Calcular y almacenar ventas, costos, utilidad bruta, gastos operativos, depreciaciones y amortizaciones
+                ventas_mensuales[f"VentasMes{mes}"] = round(total_ventas_mes, 2)
+                ventas_mensuales[f"CostoVentasMes{mes}"] = round(total_costos_mes, 2)
+                ventas_mensuales[f"UtilidadBrutaMes{mes}"] = round(total_ventas_mes - total_costos_mes, 2)
+                ventas_mensuales[f"GastosOperacionMes{mes}"] = round(total_gastos_operacion, 2)  # Gastos operativos mensual
+                ventas_mensuales[f"DepreciacionesMes{mes}"] = round(total_depreciaciones_mes, 2)
+                ventas_mensuales[f"AmortizacionesMes{mes}"] = round(total_amortizaciones_mes, 2)
+                ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] = round(
+                    total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes, 2)
+                ventas_mensuales[f"GastosFinancierosMes{mes}"] = round(total_intereses_mes, 2)
+                ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] = round(
+                    ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] - ventas_mensuales[f"GastosFinancierosMes{mes}"], 2)
+                ventas_mensuales[f"PTUMes{mes}"] = round(ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] * ptu / 100, 2)
+                ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] = round(
+                    ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] - ventas_mensuales[f"PTUMes{mes}"], 2)
+                ventas_mensuales[f"ISRMes{mes}"] = round(ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] * tasa_impuesto / 100, 2)
+                ventas_mensuales[f"UtilidadNetaMes{mes}"] = round(
+                    ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"] - ventas_mensuales[f"ISRMes{mes}"], 2)
+        
+                # Calcular flujo de efectivo
+                flujo_efectivo_anio[f"VentasContadoMes{mes}"] = round(ventas_mensuales[f"VentasMes{mes}"] * Decimal(0.8), 2)
+                flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"] = round(ventas_mensuales[f"VentasMes{mes}"] * Decimal(0.2), 2)
+                flujo_efectivo_anio[f"IngresosMes{mes}"] = round(flujo_efectivo_anio[f"VentasContadoMes{mes}"] + flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"], 2)
+                flujo_efectivo_anio[f"InteresesMes{mes}"] = round(total_intereses_mes, 2)
+                flujo_efectivo_anio[f"PagoPrestamosMes{mes}"] = round(abono_capital, 2)
+                flujo_efectivo_anio[f"PagoSRIMes{mes}"] = round(ventas_mensuales[f"ISRMes{mes}"], 2)
+        
+                # Calcular los egresos
+                costo_materia_prima_mes = Decimal(costos_materia_prima.get(producto.id, {}).get(f"Año {anio}", {}).get(str(mes), 0))
+                egresos_mes = total_gastos_operacion + costo_materia_prima_mes + (total_ventas_mes * Decimal(0.6)) + total_intereses_mes + abono_capital + ventas_mensuales[f"ISRMes{mes}"]
+                flujo_efectivo_anio[f"EgresosMes{mes}"] = round(egresos_mes, 2)
+        
+                # Calcular flujo de caja
+                flujo_caja_mes = flujo_efectivo_anio[f"IngresosMes{mes}"] - flujo_efectivo_anio[f"EgresosMes{mes}"]
+                flujo_efectivo_anio[f"FlujoCajaMes{mes}"] = round(flujo_caja_mes, 2)
+        
+                # Calcular efectivo final
+                efectivo_final_mes = efectivo_inicio_mes + flujo_caja_mes
+                flujo_efectivo_anio[f"EfectivoInicioMes{mes}"] = round(efectivo_inicio_mes, 2)
+                flujo_efectivo_anio[f"EfectivoFinalMes{mes}"] = round(efectivo_final_mes, 2)
+        
+                # Actualizar efectivo inicio para el siguiente mes
+                efectivo_inicio_mes = efectivo_final_mes
+        
+                # Acumular ventas, costos, utilidad bruta, depreciaciones, amortizaciones e intereses en el total anual
+                total_ventas_anio += total_ventas_mes
+                total_costos_anio += total_costos_mes
+                total_utilidad_bruta_anio += (total_ventas_mes - total_costos_mes)
+                total_depreciaciones_anio += total_depreciaciones_mes
+                total_amortizaciones_anio += total_amortizaciones_mes
+                total_intereses_anio += total_intereses_mes
+                total_intereses_mensuales_anio += total_intereses_mes
+                total_pago_prestamos_anio += abono_capital
+                total_egresos_anio += egresos_mes
+                total_utilidad_previo_interes_impuestos_anio += (total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes - total_intereses_mes)
+                total_utilidad_antes_ptu_anio += ventas_mensuales[f"UtilidadAntesPTUMes{mes}"]
+                total_ptu_anio += ventas_mensuales[f"PTUMes{mes}"]
+                total_utilidad_antes_impuestos_anio += ventas_mensuales[f"UtilidadAntesImpuestosMes{mes}"]
+                total_isr_anio += ventas_mensuales[f"ISRMes{mes}"]
+                total_utilidad_neta_anio += ventas_mensuales[f"UtilidadNetaMes{mes}"]
+        
+            # Guardar el efectivo final del último mes del año actual
+            efectivo_final_anio_anterior = efectivo_final_mes
+        
+            # Calcular y almacenar totales anuales
+            utilidad_bruta_anio = total_ventas_anio - total_costos_anio
+            ventas_mensuales["TotalVentasAnio"] = round(total_ventas_anio, 2)
+            ventas_mensuales["CostoVentasAnio"] = round(total_costos_anio, 2)
+            ventas_mensuales["UtilidadBrutaAnio"] = round(utilidad_bruta_anio, 2)
+            ventas_mensuales["CostoGastosOperacionAnio"] = round(total_gastos_operacion * 12, 2)  # Gastos operativos anuales
+            ventas_mensuales["DepreciacionesAnio"] = round(total_depreciaciones_anio, 2)
+            ventas_mensuales["AmortizacionesAnio"] = round(total_amortizaciones_anio, 2)
+            ventas_mensuales["UtilidadPrevioInteresImpuestosAnio"] = round(total_utilidad_previo_interes_impuestos_anio, 2)
+            ventas_mensuales["GastosFinancierosAnio"] = round(total_intereses_anio, 2)
+            ventas_mensuales["UtilidadAntesPTUAnio"] = round(total_utilidad_antes_ptu_anio, 2)
+            ventas_mensuales["PTUAnio"] = round(total_ptu_anio, 2)
+            ventas_mensuales["UtilidadAntesImpuestosAnio"] = round(total_utilidad_antes_impuestos_anio, 2)
+            ventas_mensuales["ISRAnio"] = round(total_isr_anio, 2)
+            ventas_mensuales["UtilidadNetaAnio"] = round(total_utilidad_neta_anio, 2)
+            ventas_mensuales_detalladas[f"Anio{anio}"] = ventas_mensuales
+        
+            # Calcular y almacenar totales anuales para flujo de efectivo
+            flujo_efectivo_anio["TotalVentasContadoAnio"] = round(sum(flujo_efectivo_anio[f"VentasContadoMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalCobroVentasCreditoAnio"] = round(sum(flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalIngresosAnio"] = round(sum(flujo_efectivo_anio[f"IngresosMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalInteresesAnio"] = round(sum(flujo_efectivo_anio[f"InteresesMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalPagoPrestamosAnio"] = round(sum(flujo_efectivo_anio[f"PagoPrestamosMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalPagoSRIAnio"] = round(sum(flujo_efectivo_anio[f"PagoSRIMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalEgresosAnio"] = round(sum(flujo_efectivo_anio[f"EgresosMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalFlujoCajaAnio"] = round(sum(flujo_efectivo_anio[f"FlujoCajaMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalEfectivoInicioAnio"] = round(sum(flujo_efectivo_anio[f"EfectivoInicioMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalEfectivoFinalAnio"] = round(sum(flujo_efectivo_anio[f"EfectivoFinalMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_detallado[f"Anio{anio}"] = flujo_efectivo_anio
+        
+        # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
+        return Response({
+            "plan_negocio": plan_negocio.id,
+            "ventas_mensuales_anuales": ventas_mensuales_detalladas,
+            "flujo_efectivo": flujo_efectivo_detallado
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
