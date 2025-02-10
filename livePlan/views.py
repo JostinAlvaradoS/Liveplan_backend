@@ -926,6 +926,7 @@ def gestionar_prestamo(request):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 @api_view(['POST'])
 def generar_utilidad_bruta(request):
     try:
@@ -982,6 +983,39 @@ def generar_utilidad_bruta(request):
         ptu = macro.ptu if macro else Decimal(0)
         tasa_impuesto = macro.tasaImpuesto if macro else Decimal(0)
 
+        # Obtener el préstamo existente
+        prestamo_existente = prestamo.objects.filter(planNegocio=plan_negocio).first()
+        if not prestamo_existente:
+            return Response({"error": "No se encontró un préstamo para este plan de negocio."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Obtener los datos del préstamo
+        tasa_interes_mensual = Decimal(prestamo_existente.tasaInteresMensual) / Decimal(100)
+        cuota_fija_mensual = prestamo_existente.cuotaFijaMensual
+
+        # Recalcular los costos de materia prima
+        costos_materia_prima = {}
+        tipo2_categoria_id = 2
+        for producto in productos:
+            costos_tipo2 = Costo.objects.filter(planNegocio=plan_negocio, producto_servicio=producto, categoria_id=tipo2_categoria_id).aggregate(total_costo_tipo2=Sum('costo'))
+            total_costo_tipo2_producto = costos_tipo2['total_costo_tipo2'] if costos_tipo2['total_costo_tipo2'] else 0
+
+            if total_costo_tipo2_producto == 0:
+                continue
+
+            ventas = ventasMes.objects.filter(planNegocio=plan_negocio, producto=producto).first()
+            if not ventas:
+                continue
+
+            ganancia_mensual = {f"Año {anio}": {str(mes): 0 for mes in range(1, 13)} for anio in range(1, 6)}
+            for anio in range(1, 6):
+                total_anio = getattr(ventas, f'anio{anio}', 0)
+                if total_anio:
+                    total_anio_mensual = total_anio / 12
+                    for mes in range(1, 13):
+                        ganancia_mensual[f"Año {anio}"][str(mes)] = total_anio_mensual * total_costo_tipo2_producto
+
+            costos_materia_prima[producto.id] = ganancia_mensual
+
         # Iterar por cada año (anio1 a anio5)
         for anio in range(1, 6):
             ventas_mensuales = {}
@@ -998,6 +1032,9 @@ def generar_utilidad_bruta(request):
             total_utilidad_antes_impuestos_anio = Decimal(0)
             total_isr_anio = Decimal(0)
             total_utilidad_neta_anio = Decimal(0)
+            total_intereses_mensuales_anio = Decimal(0)
+            total_pago_prestamos_anio = Decimal(0)
+            total_egresos_anio = Decimal(0)
 
             # Iterar por cada mes (1 a 12)
             for mes in range(1, 13):
@@ -1006,6 +1043,9 @@ def generar_utilidad_bruta(request):
                 total_depreciaciones_mes = Decimal(0)
                 total_amortizaciones_mes = Decimal(0)
                 total_intereses_mes = Decimal(intereses.get(f"interesesMes{(anio - 1) * 12 + mes}", 0))
+
+                # Calcular el abono capital del préstamo
+                abono_capital = cuota_fija_mensual - total_intereses_mes
 
                 # Iterar sobre los productos para calcular las ventas y costos por mes
                 for producto in productos:
@@ -1038,7 +1078,7 @@ def generar_utilidad_bruta(request):
                 for inversion_id, amortizacion in amortizaciones_mensuales.items():
                     total_amortizaciones_mes += amortizacion
 
-                # Calcular y almacenar ventas, costos, utilidad bruta, gastos operativos, depreciaciones, amortizaciones e intereses
+                # Calcular y almacenar ventas, costos, utilidad bruta, gastos operativos, depreciaciones y amortizaciones
                 ventas_mensuales[f"VentasMes{mes}"] = round(total_ventas_mes, 2)
                 ventas_mensuales[f"CostoVentasMes{mes}"] = round(total_costos_mes, 2)
                 ventas_mensuales[f"UtilidadBrutaMes{mes}"] = round(total_ventas_mes - total_costos_mes, 2)
@@ -1046,7 +1086,7 @@ def generar_utilidad_bruta(request):
                 ventas_mensuales[f"DepreciacionesMes{mes}"] = round(total_depreciaciones_mes, 2)
                 ventas_mensuales[f"AmortizacionesMes{mes}"] = round(total_amortizaciones_mes, 2)
                 ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] = round(
-                    total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes - total_intereses_mes, 2)
+                    total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes, 2)
                 ventas_mensuales[f"GastosFinancierosMes{mes}"] = round(total_intereses_mes, 2)
                 ventas_mensuales[f"UtilidadAntesPTUMes{mes}"] = round(
                     ventas_mensuales[f"UtilidadPrevioInteresImpuestosMes{mes}"] - ventas_mensuales[f"GastosFinancierosMes{mes}"], 2)
@@ -1061,6 +1101,18 @@ def generar_utilidad_bruta(request):
                 flujo_efectivo_anio[f"VentasContadoMes{mes}"] = round(ventas_mensuales[f"VentasMes{mes}"] * Decimal(0.8), 2)
                 flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"] = round(ventas_mensuales[f"VentasMes{mes}"] * Decimal(0.2), 2)
                 flujo_efectivo_anio[f"IngresosMes{mes}"] = round(flujo_efectivo_anio[f"VentasContadoMes{mes}"] + flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"], 2)
+                flujo_efectivo_anio[f"InteresesMes{mes}"] = round(total_intereses_mes, 2)
+                flujo_efectivo_anio[f"PagoPrestamosMes{mes}"] = round(abono_capital, 2)
+                flujo_efectivo_anio[f"PagoSRIMes{mes}"] = round(ventas_mensuales[f"ISRMes{mes}"], 2)
+
+                # Calcular los egresos
+                costo_materia_prima_mes = Decimal(costos_materia_prima.get(producto.id, {}).get(f"Año {anio}", {}).get(str(mes), 0))
+                egresos_mes = total_gastos_operacion + costo_materia_prima_mes + (total_ventas_mes * Decimal(0.6)) + total_intereses_mes + abono_capital + ventas_mensuales[f"ISRMes{mes}"]
+                flujo_efectivo_anio[f"EgresosMes{mes}"] = round(egresos_mes, 2)
+
+                # Calcular flujo de caja
+                flujo_caja_mes = flujo_efectivo_anio[f"IngresosMes{mes}"] - flujo_efectivo_anio[f"EgresosMes{mes}"]
+                flujo_efectivo_anio[f"FlujoCajaMes{mes}"] = round(flujo_caja_mes, 2)
 
                 # Acumular ventas, costos, utilidad bruta, depreciaciones, amortizaciones e intereses en el total anual
                 total_ventas_anio += total_ventas_mes
@@ -1069,6 +1121,9 @@ def generar_utilidad_bruta(request):
                 total_depreciaciones_anio += total_depreciaciones_mes
                 total_amortizaciones_anio += total_amortizaciones_mes
                 total_intereses_anio += total_intereses_mes
+                total_intereses_mensuales_anio += total_intereses_mes
+                total_pago_prestamos_anio += abono_capital
+                total_egresos_anio += egresos_mes
                 total_utilidad_previo_interes_impuestos_anio += (total_ventas_mes - total_costos_mes - total_gastos_operacion - total_depreciaciones_mes - total_amortizaciones_mes - total_intereses_mes)
                 total_utilidad_antes_ptu_anio += ventas_mensuales[f"UtilidadAntesPTUMes{mes}"]
                 total_ptu_anio += ventas_mensuales[f"PTUMes{mes}"]
@@ -1097,6 +1152,11 @@ def generar_utilidad_bruta(request):
             flujo_efectivo_anio["TotalVentasContadoAnio"] = round(sum(flujo_efectivo_anio[f"VentasContadoMes{mes}"] for mes in range(1, 13)), 2)
             flujo_efectivo_anio["TotalCobroVentasCreditoAnio"] = round(sum(flujo_efectivo_anio[f"CobroVentasCreditoMes{mes}"] for mes in range(1, 13)), 2)
             flujo_efectivo_anio["TotalIngresosAnio"] = round(sum(flujo_efectivo_anio[f"IngresosMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalInteresesAnio"] = round(sum(flujo_efectivo_anio[f"InteresesMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalPagoPrestamosAnio"] = round(sum(flujo_efectivo_anio[f"PagoPrestamosMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalPagoSRIAnio"] = round(sum(flujo_efectivo_anio[f"PagoSRIMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalEgresosAnio"] = round(sum(flujo_efectivo_anio[f"EgresosMes{mes}"] for mes in range(1, 13)), 2)
+            flujo_efectivo_anio["TotalFlujoCajaAnio"] = round(sum(flujo_efectivo_anio[f"FlujoCajaMes{mes}"] for mes in range(1, 13)), 2)
             flujo_efectivo_detallado[f"Anio{anio}"] = flujo_efectivo_anio
 
         # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades

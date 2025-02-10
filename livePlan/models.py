@@ -72,6 +72,7 @@ class Costo(models.Model):
     producto_servicio = models.ForeignKey(Producto_servicio,on_delete=models.CASCADE)
     costo = models.DecimalField(max_digits=10, decimal_places=3)
 
+
 class IndicadoresMacro(models.Model):
     id = models.AutoField(primary_key=True)
     planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
