@@ -1194,27 +1194,26 @@ def generar_utilidad_bruta(request):
         efectivo_inicio = total_gastos_operacion * 2
 
         # Cargar en memoria los precios de venta, proyecciones y costos de ventas
-        precios_venta = {p.producto_servicio.id: Decimal(p.precio) for p in PrecioVenta.objects.filter(planNegocio=plan_negocio)}
+        precios_venta = {p.producto_servicio.id: Decimal(p.precio or 0) for p in PrecioVenta.objects.filter(planNegocio=plan_negocio)}
         proyecciones_ventas = {
-            (v.producto.id, f'anio{anio}'): Decimal(getattr(v, f'anio{anio}', 0))
+            (v.producto.id, f'anio{anio}'): Decimal(getattr(v, f'anio{anio}', 0) or 0)
             for v in ventasMes.objects.filter(planNegocio=plan_negocio)
             for anio in range(1, 6)
         }
         costos_ventas = {
-            (c.producto.id, f'anio{anio}'): Decimal(getattr(c, f'anio{anio}', 0)) / Decimal(12)
+            (c.producto.id, f'anio{anio}'): Decimal(getattr(c, f'anio{anio}', 0) or 0) / Decimal(12)
             for c in costosVenta.objects.filter(planNegocio=plan_negocio)
             for anio in range(1, 6)
         }
-
         # Obtener las depreciaciones mensuales
         depreciaciones_mensuales = {
-            d.inversion.id: Decimal(d.depreciacionMensual)
+            d.inversion.id: Decimal(d.depreciacionMensual or 0)
             for d in depreciacionMensual.objects.filter(planNegocio=plan_negocio, inversion__tipo=1)
         }
 
         # Obtener las amortizaciones mensuales
         amortizaciones_mensuales = {
-            a.inversion.id: Decimal(a.depreciacionMensual)
+            a.inversion.id: Decimal(a.depreciacionMensual or 0)
             for a in depreciacionMensual.objects.filter(planNegocio=plan_negocio, inversion__tipo=2)
         }
 
@@ -1448,3 +1447,60 @@ def generar_utilidad_bruta(request):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+
+
+@api_view(['POST'])
+def obtener_evaluacion_financiera(request):
+    try:
+        # Obtener el ID del plan de negocio desde el POST
+        plan_negocio_id = request.data.get('planNegocio')
+        if not plan_negocio_id:
+            return Response({"error": "El campo 'planNegocio' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar la existencia del plan de negocio
+        plan_negocio = planNegocio.objects.get(id=plan_negocio_id)
+
+        # Obtener los datos de la tabla evaluacionFinanciera
+        evaluacion_financiera = evaluacionFinanciera.objects.get(planNegocio=plan_negocio)
+
+        # Preparar la respuesta
+        flujoefectivoNominales = {
+            "inversionTotal": evaluacion_financiera.inversionTotal,
+            "anio1": evaluacion_financiera.anio1,
+            "anio2": evaluacion_financiera.anio2,
+            "anio3": evaluacion_financiera.anio3,
+            "anio4": evaluacion_financiera.anio4,
+            "anio5": evaluacion_financiera.anio5
+        }
+
+        valorRescate = {
+            "anio0": 0,
+            "anio1": 0,
+            "anio2": 0,
+            "anio3": 0,
+            "anio4": 0,
+            "anio5": 1418
+        }
+
+        totalFlujosEfectivo = {
+            "anio0": flujoefectivoNominales["inversionTotal"] - valorRescate["anio0"],
+            "anio1": flujoefectivoNominales["anio1"] - valorRescate["anio1"],
+            "anio2": flujoefectivoNominales["anio2"] - valorRescate["anio2"],
+            "anio3": flujoefectivoNominales["anio3"] - valorRescate["anio3"],
+            "anio4": flujoefectivoNominales["anio4"] - valorRescate["anio4"],
+            "anio5": flujoefectivoNominales["anio5"] - valorRescate["anio5"]
+        }
+
+        # Respuesta JSON con los datos solicitados
+        return Response({
+            "flujoefectivoNominales": flujoefectivoNominales,
+            "valorRescate": valorRescate,
+            "totalFlujosEfectivo": totalFlujosEfectivo
+        }, status=status.HTTP_200_OK)
+
+    except planNegocio.DoesNotExist:
+        return Response({"error": "Plan de negocio no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except evaluacionFinanciera.DoesNotExist:
+        return Response({"error": "Evaluación financiera no encontrada para este plan de negocio."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
