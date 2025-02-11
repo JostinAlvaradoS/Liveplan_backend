@@ -5,7 +5,7 @@ from rest_framework import status
 from decimal import Decimal
 from django.db.models import Sum
 from livePlan.auxiliares import calcular_intereses, calcular_ventas_mensuales
-from .models import Categorias_costos, ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, costosVenta, depreciacionMensual, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, prestamo, proyeccionVentas, ventasMes
+from .models import Categorias_costos, ComposicionFinanciamiento, Costo, IndicadoresMacro, PrecioVenta, Producto_servicio, VariacionAnual, VentaDiaria, costosVenta, depreciacionMensual, evaluacionFinanciera, gastosOperacion, planNegocio, inversionInicial, detalleInversionInicial, prestamo, proyeccionVentas, ventasMes
 from .serializers import CostoSerializer, FinanciamientoSerializer, IndicadoresMacroSerializer, PlanNegocioSerializer, InversionInicialSerializer, DetalleInversionInicialSerializer, PrecioVentaSerializer, ProductoServicioSerializer, SupuestoSerializer, VariacionAnualSerializer, VentaDiariaSerializer
 
 @api_view(['POST'])
@@ -1184,6 +1184,8 @@ def generar_utilidad_bruta(request):
         ventas_mensuales_detalladas = {}
         flujo_efectivo_detallado = {}
 
+        total_inversion = inversionInicial.objects.filter(planNegocio=plan_negocio_id).aggregate(total=Sum('importe'))['total'] or Decimal(0)
+
         # Obtener todos los productos asociados a este plan de negocio
         productos = Producto_servicio.objects.filter(planNegocio=plan_negocio)
 
@@ -1421,6 +1423,21 @@ def generar_utilidad_bruta(request):
             flujo_efectivo_anio["TotalEfectivoFinalAnio"] = round(sum(flujo_efectivo_anio[f"EfectivoFinalMes{mes}"] for mes in range(1, 13)), 2)
             flujo_efectivo_detallado[f"Anio{anio}"] = flujo_efectivo_anio
         
+                # ...existing code...
+        
+        # Guardar o actualizar los datos en la tabla evaluacionFinanciera
+        evaluacion_financiera, created = evaluacionFinanciera.objects.update_or_create(
+            planNegocio=plan_negocio,
+            defaults={
+                'anio1': flujo_efectivo_detallado['Anio1']['TotalFlujoCajaAnio'],
+                'anio2': flujo_efectivo_detallado['Anio2']['TotalFlujoCajaAnio'],
+                'anio3': flujo_efectivo_detallado['Anio3']['TotalFlujoCajaAnio'],
+                'anio4': flujo_efectivo_detallado['Anio4']['TotalFlujoCajaAnio'],
+                'anio5': flujo_efectivo_detallado['Anio5']['TotalFlujoCajaAnio'],
+                'inversionTotal': total_inversion
+            }
+        )
+        
         # Respuesta JSON con los detalles de ventas mensuales, costos y utilidades
         return Response({
             "plan_negocio": plan_negocio.id,
@@ -1430,3 +1447,4 @@ def generar_utilidad_bruta(request):
         
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    

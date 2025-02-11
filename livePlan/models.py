@@ -99,6 +99,17 @@ class proyeccionVentas(models.Model):
     ventas_mensuales = models.JSONField()  
 
 
+class evaluacionFinanciera(models.Model):
+    id = models.AutoField(primary_key=True)
+    planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
+    anio1 = models.IntegerField()
+    anio2 = models.IntegerField()
+    anio3 = models.IntegerField()
+    anio4 = models.IntegerField()
+    anio5 = models.IntegerField()
+    inversionTotal = models.IntegerField()
+
+
 class depreciacionMensual(models.Model):
     id = models.AutoField(primary_key=True)
     planNegocio = models.ForeignKey(planNegocio, on_delete=models.CASCADE)
